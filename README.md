@@ -15,7 +15,7 @@ A Python 3.12 rewrite of [FSCrawler](https://fscrawler.readthedocs.io/), a file 
 ## Features
 
 - **Backwards-compatible** `_settings.yaml` format — drop-in replacement for the Java version
-- **Event-driven crawling** — watches the filesystem for changes in real time using OS-native events; no polling or checkpoint files required
+- **Event-driven crawling** — watches the filesystem for changes in real time using OS-native events; no polling required
 - **Apache Tika integration** — connects to a running Tika server over HTTP (no bundled JVM)
 - **Bulk indexing** — buffers documents and flushes on document count or byte-size thresholds
 - **Template management** — creates OpenSearch component and index templates automatically
@@ -26,9 +26,6 @@ A Python 3.12 rewrite of [FSCrawler](https://fscrawler.readthedocs.io/), a file 
 ### With Docker Compose
 
 ```bash
-# Clone and enter the _python directory
-cd _python
-
 # Start OpenSearch, Tika, Dashboards, and FSCrawler
 docker compose up -d
 
@@ -94,6 +91,7 @@ src/fscrawler/
 ├── templates.py  OpenSearch component and index template definitions
 ├── client.py     opensearch-py wrapper
 ├── crawler.py    Local filesystem walker with checkpoint tracking
+├── watcher.py    Watchdog-based filesystem event handler
 ├── parser.py     Apache Tika HTTP client
 └── indexer.py    Bulk buffering/flushing processor
 ```
