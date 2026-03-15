@@ -1,0 +1,7 @@
+{
+  "Content-Type": "application/pdf",
+  "dc:title": "Test Document",
+  "dc:creator": "John Doe",
+  "Creation-Date": "2024-01-01T00:00:00Z",
+  "X-TIKA:content": "This is the content of the test document."
+}

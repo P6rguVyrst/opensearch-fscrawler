@@ -1,0 +1,40 @@
+# Dependency Folders (Massive token sink)
+.venv/
+env/
+venv/
+node_modules/
+__pycache__/
+*.pyc
+
+# Data & Large JSON Mocks (Prevents indexing raw test data)
+tests/data/*.json
+*.log
+*.csv
+*.sql
+*.sqlite
+
+# Build & Cache Artifacts
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+build/
+dist/
+*.egg-info/
+
+# Docker & System
+.docker/
+.git/
+.svn/
+.DS_Store
+Thumbs.db
+
+# Large Documentation/Media
+site/
+_build/
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+

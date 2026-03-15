@@ -1,0 +1,83 @@
+---
+# FSCrawler Python edition — docker-compose development stack
+# Services: OpenSearch, OpenSearch Dashboards, Apache Tika, FSCrawler
+#
+# Usage:
+#   docker compose up -d            # start everything
+#   docker compose logs -f fscrawler
+#   docker compose down             # stop and remove containers
+
+services:
+
+  opensearch:
+    image: opensearchproject/opensearch:3.0.0
+    container_name: fscrawler-opensearch
+    environment:
+      - cluster.name=opensearch-cluster
+      - node.name=opensearch-node1
+      - discovery.type=single-node
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=admin          # required ≥ 2.12
+      - plugins.security.disabled=true                   # disable security for dev
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\\|yellow\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.19.1
+    container_name: fscrawler-dashboards
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    environment:
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    ports:
+      - "5601:5601"
+
+  tika:
+    image: apache/tika:latest-full
+    container_name: fscrawler-tika
+    ports:
+      - "9998:9998"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9998/tika | grep -q 'Apache Tika'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  fscrawler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fscrawler-app
+    depends_on:
+      opensearch:
+        condition: service_healthy
+      tika:
+        condition: service_healthy
+    environment:
+      - FSCRAWLER_CONFIG_DIR=/home/fscrawler/.fscrawler
+      - OPENSEARCH_URL=http://opensearch:9200
+      - TIKA_URL=http://tika:9998
+    volumes:
+      - ./config:/home/fscrawler/.fscrawler
+      - ./data:/data
+    # Override CMD: run a named job in loop mode
+    command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "myjob"]
+
+volumes:
+  opensearch-data:
+    driver: local

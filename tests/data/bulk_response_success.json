@@ -1,0 +1,14 @@
+{
+  "took": 10,
+  "errors": false,
+  "items": [
+    {
+      "index": {
+        "_index": "test_docs",
+        "_id": "1",
+        "result": "created",
+        "status": 201
+      }
+    }
+  ]
+}

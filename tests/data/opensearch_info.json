@@ -1,0 +1,11 @@
+{
+  "name": "opensearch-node1",
+  "cluster_name": "opensearch-cluster",
+  "version": {
+    "number": "3.5.0",
+    "distribution": "opensearch",
+    "build_type": "tar",
+    "lucene_version": "9.12.0"
+  },
+  "tagline": "The OpenSearch Project: https://opensearch.org/"
+}

@@ -1,0 +1,25 @@
+opensearch-fscrawler
+Copyright (c) Toomas Ormisson - 2024
+
+=========================================================================
+
+This product is a Python rewrite, derived from FSCrawler:
+
+  FSCrawler — https://github.com/dadoonet/fscrawler
+  Copyright (c) David Pilato - 2012
+  Licensed under the Apache License, Version 2.0
+
+The following elements are derived from the original work:
+  - The _settings.yaml configuration format and field names
+  - The REST API endpoint design and behaviour (/_document, /_crawler/*)
+  - The overall crawl-and-index workflow and checkpoint mechanism
+  - The COMPATIBILITY.md test matrix and expected behaviours
+
+All source code in this repository is original Python, written from
+scratch in a different programming language. No Java source code from
+the original FSCrawler project has been copied or translated.
+
+=========================================================================
+
+This product includes software developed by The Apache Software
+Foundation (http://www.apache.org/).

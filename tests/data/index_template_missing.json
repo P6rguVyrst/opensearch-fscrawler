@@ -1,0 +1,7 @@
+{
+  "error": {
+    "type": "resource_not_found_exception",
+    "reason": "index template [fscrawler_test_docs] missing"
+  },
+  "status": 404
+}

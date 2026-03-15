@@ -1,0 +1,7 @@
+{
+  "error": {
+    "type": "resource_not_found_exception",
+    "reason": "component template [fscrawler_test_alias] missing"
+  },
+  "status": 404
+}

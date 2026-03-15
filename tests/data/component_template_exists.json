@@ -1,0 +1,14 @@
+{
+  "component_templates": [
+    {
+      "name": "fscrawler_test_alias",
+      "component_template": {
+        "template": {
+          "aliases": {
+            "test": {}
+          }
+        }
+      }
+    }
+  ]
+}
