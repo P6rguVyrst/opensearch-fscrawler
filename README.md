@@ -1,5 +1,8 @@
 # FSCrawler — Python Edition
 
+[![CI](https://github.com/P6rguVyrst/opensearch-fscrawler/actions/workflows/ci.yml/badge.svg)](https://github.com/P6rguVyrst/opensearch-fscrawler/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/P6rguVyrst/opensearch-fscrawler/branch/main/graph/badge.svg)](https://codecov.io/gh/P6rguVyrst/opensearch-fscrawler)
+
 > **Disclaimer:** This is a prototype intended for local development and experimentation only. It is **not production-ready** and should not be used in production environments.
 
 A Python 3.12 rewrite of [FSCrawler](https://fscrawler.readthedocs.io/), a file system crawler that indexes binary documents (PDF, MS Office, plain text, and more) into OpenSearch or Elasticsearch.
@@ -36,8 +39,8 @@ docker compose logs -f fscrawler
 ### Locally (development)
 
 ```bash
-# Install
-pip install -e ".[dev]"
+# One command: install deps, wire git hooks
+make develop
 
 # Create a job config
 fscrawler --setup myjob
@@ -63,12 +66,13 @@ See [docs/configuration.md](docs/configuration.md) for the full settings referen
 ## Development
 
 ```bash
-make install      # install with dev extras
+make develop      # first-time setup: install deps + activate git hooks
 make test         # run unit tests
 make lint         # ruff check
 make typecheck    # mypy
 make test-all     # unit + integration (needs OPENSEARCH_URL)
 ```
+
 
 ### Integration tests
 
@@ -93,6 +97,13 @@ src/fscrawler/
 ├── parser.py     Apache Tika HTTP client
 └── indexer.py    Bulk buffering/flushing processor
 ```
+
+## Security
+
+This prototype has known security issues — including no REST authentication,
+unbounded upload size, and unvalidated index names — that make it unsuitable for
+production or internet-facing deployments. See [SECURITY.md](SECURITY.md) for
+the full list.
 
 ## Credits
 

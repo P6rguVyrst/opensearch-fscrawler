@@ -87,3 +87,8 @@ ignore = ["E501"]
 python_version = "3.12"
 strict = true
 ignore_missing_imports = true
+
+[dependency-groups]
+dev = [
+    "bandit[toml]>=1.9.4",
+]

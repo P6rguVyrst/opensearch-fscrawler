@@ -1,25 +1,49 @@
-.PHONY: install test test-integration test-all lint format typecheck up down build clean
+.PHONY: develop install hooks security update-security-baseline test test-integration test-all lint format typecheck up down build clean
+
+PYTHON  = .venv/bin/python
+PYTEST  = .venv/bin/pytest
+RUFF    = .venv/bin/ruff
+MYPY    = .venv/bin/mypy
+BANDIT  = .venv/bin/bandit
+
+develop: install hooks
+	@echo ""
+	@echo "Done. Activate your shell environment with:"
+	@echo "  source .venv/bin/activate"
+	@echo ""
+	@echo "Then start services with: make up"
 
 install:
-	uv pip install -e ".[dev]"
+	uv venv
+	uv sync --all-extras
+
+hooks:
+	git config core.hooksPath .githooks
+	@echo "Git hooks installed. Pre-commit security scan is now active."
+
+security:
+	$(PYTHON) scripts/security_scan.py
+
+update-security-baseline:
+	$(PYTHON) scripts/update_security_baseline.py
 
 test:
-	pytest tests/unit -sv --cov=fscrawler --cov-report=term-missing --cov-report=html:htmlcov
+	$(PYTEST) tests/unit -sv --cov=fscrawler --cov-report=term-missing --cov-report=html:htmlcov
 
 test-integration:
-	pytest tests/integration -sv -m integration --cov=fscrawler --cov-report=term-missing --cov-report=html:htmlcov
+	$(PYTEST) tests/integration -sv -m integration --cov=fscrawler --cov-report=term-missing --cov-report=html:htmlcov
 
 test-all:
-	pytest tests/ -sv --cov=fscrawler --cov-report=term-missing --cov-report=html:htmlcov --cov-report=xml:coverage.xml
+	$(PYTEST) tests/ -sv --cov=fscrawler --cov-report=term-missing --cov-report=html:htmlcov --cov-report=xml:coverage.xml
 
 lint:
-	ruff check src tests
+	$(RUFF) check src tests
 
 format:
-	ruff format src tests
+	$(RUFF) format src tests
 
 typecheck:
-	mypy src
+	$(MYPY) src
 
 up:
 	docker compose up -d

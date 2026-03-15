@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v uv &>/dev/null; then
+    echo "pre-commit: uv not found — skipping security scan"
+    exit 0
+fi
+
+if ! uv run bandit --version &>/dev/null 2>&1; then
+    echo "pre-commit: bandit not available — run 'uv add bandit[toml] --dev' to enable scanning"
+    exit 0
+fi
+
+uv run python scripts/security_scan.py
