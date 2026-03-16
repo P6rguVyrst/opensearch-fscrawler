@@ -38,7 +38,7 @@ import logging.handlers
 import sys
 import traceback
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -107,9 +107,9 @@ class OtelJsonFormatter(logging.Formatter):
     can be ingested by any OTel-aware log pipeline without further enrichment.
     """
 
-    def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
+    def format(self, record: logging.LogRecord) -> str:
         sev_num, sev_text = _otel_severity(record.levelno)
-        ts = datetime.fromtimestamp(record.created, tz=timezone.utc)
+        ts = datetime.fromtimestamp(record.created, tz=UTC)
         time_str = ts.strftime("%Y-%m-%dT%H:%M:%S.") + f"{ts.microsecond // 1000:03d}Z"
 
         attributes: dict[str, Any] = {
@@ -204,7 +204,7 @@ class _OtlpHttpHandler(logging.Handler):
             ]
         }
         body = json.dumps(payload).encode()
-        req = urllib.request.Request(
+        req = urllib.request.Request(  # noqa: S310
             self._url,
             data=body,
             headers={"Content-Type": "application/json"},

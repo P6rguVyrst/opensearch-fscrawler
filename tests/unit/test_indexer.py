@@ -169,7 +169,7 @@ class TestIndexerDocumentId:
         call_args = mock_opensearch_client.bulk.call_args
         body = call_args[1].get("body") or call_args[0][0]
         index_actions = [op for op in body if "index" in op]
-        expected_id = hashlib.md5(path.encode()).hexdigest()
+        expected_id = hashlib.sha256(path.encode()).hexdigest()
         assert any(a["index"].get("_id") == expected_id for a in index_actions)
 
 

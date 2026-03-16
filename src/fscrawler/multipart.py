@@ -70,7 +70,10 @@ def parse_multipart(content_type_header: str, body: bytes) -> list[FormFile]:
 
         # get_params returns list of (key, value) tuples; first is the
         # disposition value itself ("form-data"), remainder are params.
-        params = dict(part.get_params(header="content-disposition")[1:])
+        raw_params = part.get_params(header="content-disposition")
+        if raw_params is None:
+            continue
+        params = dict(raw_params[1:])
         filename = params.get("filename")
         if filename is None:
             continue  # plain text field, not a file upload

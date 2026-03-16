@@ -9,7 +9,7 @@ import time
 from typing import Any
 from urllib.parse import urlparse
 
-from opensearchpy import OpenSearch, RequestError, TransportError
+from opensearchpy import OpenSearch
 from opensearchpy.exceptions import ConnectionError as OSConnectionError
 
 from fscrawler.settings import FsSettings

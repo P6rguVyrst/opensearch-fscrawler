@@ -259,7 +259,6 @@ async def _extract_file(request: Request) -> Any:
 
     Raises HTTPException(422) if no file part is found.
     """
-    from fscrawler.multipart import FormFile
 
     content_type = request.headers.get("content-type", "")
     body = await request.body()
