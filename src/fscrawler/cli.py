@@ -8,12 +8,17 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from watchdog.observers import Observer
+if TYPE_CHECKING:
+    from fscrawler.client import FsCrawlerClient
+    from fscrawler.parser import TikaParser
+    from fscrawler.settings import FsSettings
 
 import click
 import uvicorn
+from watchdog.observers import Observer
 
 from fscrawler import __version__
 from fscrawler.rest_server import CrawlerState, create_app
@@ -178,8 +183,8 @@ def _run_rest(settings_file: Path, job_dir: Path) -> None:
 
 
 def _crawler_loop(
-    settings: object,
-    client: object,
+    settings: FsSettings,
+    client: FsCrawlerClient,
     job_dir: Path,
     crawler_state: CrawlerState,
 ) -> None:
@@ -192,14 +197,12 @@ def _crawler_loop(
        from starting.
     """
     from fscrawler.parser import TikaParser
-    from fscrawler.settings import FsSettings
 
-    assert isinstance(settings, FsSettings)
     parser = TikaParser(settings, tika_url=settings.fs.tika_url)
 
     # Initial scan — index everything already in the directory.
     try:
-        _crawl_once(settings, client, parser, job_dir)  # type: ignore[arg-type]
+        _crawl_once(settings, client, parser, job_dir)
     except Exception as exc:
         logger.error("Initial crawl failed: %s", exc, exc_info=True)
 
@@ -219,27 +222,22 @@ def _crawler_loop(
 
 
 def _crawl_once(
-    settings: object,
-    client: object,
-    parser: object,
+    settings: FsSettings,
+    client: FsCrawlerClient,
+    parser: TikaParser,
     job_dir: Path,
 ) -> None:
     """Execute one full crawl pass: scan, index new/modified, delete removed."""
-    from fscrawler.client import FsCrawlerClient
     from fscrawler.crawler import LocalCrawler
     from fscrawler.indexer import BulkIndexer
-    from fscrawler.parser import TikaParser
-    from fscrawler.settings import FsSettings
-
-    assert isinstance(settings, FsSettings)
-    assert isinstance(client, FsCrawlerClient)
-    assert isinstance(parser, TikaParser)
 
     crawler = LocalCrawler(settings, config_dir=job_dir)
     with BulkIndexer(client, settings) as indexer:
         for folder_path in crawler.scan_folders():
-            from fscrawler.models import FolderDocument, PathInfo as _PathInfo
             from pathlib import Path as _Path
+
+            from fscrawler.models import FolderDocument
+            from fscrawler.models import PathInfo as _PathInfo
             _root = _Path(settings.fs.url)
             _rel = folder_path.relative_to(_root)
             virtual = "/" if str(_rel) == "." else "/" + _rel.as_posix()

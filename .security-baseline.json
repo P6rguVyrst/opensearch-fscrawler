@@ -1,59 +1,5 @@
 {
   "acknowledged": {
-    "79629a1c0bbb8f03": {
-      "test_id": "B101",
-      "filename": "src/fscrawler/cli.py",
-      "line": 197,
-      "severity": "LOW",
-      "confidence": "HIGH",
-      "text": "Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.",
-      "acknowledged_at": "2026-03-15"
-    },
-    "050b3eddd5641d61": {
-      "test_id": "B101",
-      "filename": "src/fscrawler/cli.py",
-      "line": 234,
-      "severity": "LOW",
-      "confidence": "HIGH",
-      "text": "Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.",
-      "acknowledged_at": "2026-03-15"
-    },
-    "ad4316a4fc52c20e": {
-      "test_id": "B101",
-      "filename": "src/fscrawler/cli.py",
-      "line": 235,
-      "severity": "LOW",
-      "confidence": "HIGH",
-      "text": "Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.",
-      "acknowledged_at": "2026-03-15"
-    },
-    "0ec4a8a827f661cc": {
-      "test_id": "B101",
-      "filename": "src/fscrawler/cli.py",
-      "line": 236,
-      "severity": "LOW",
-      "confidence": "HIGH",
-      "text": "Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.",
-      "acknowledged_at": "2026-03-15"
-    },
-    "c63349ec2d1c57f5": {
-      "test_id": "B101",
-      "filename": "src/fscrawler/indexer.py",
-      "line": 85,
-      "severity": "LOW",
-      "confidence": "HIGH",
-      "text": "Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.",
-      "acknowledged_at": "2026-03-15"
-    },
-    "c259ce42733076b3": {
-      "test_id": "B324",
-      "filename": "src/fscrawler/indexer.py",
-      "line": 126,
-      "severity": "HIGH",
-      "confidence": "HIGH",
-      "text": "Use of weak MD5 hash for security. Consider usedforsecurity=False",
-      "acknowledged_at": "2026-03-15"
-    },
     "5cb7c17483da755d": {
       "test_id": "B310",
       "filename": "src/fscrawler/logging_config.py",
@@ -63,32 +9,14 @@
       "text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
       "acknowledged_at": "2026-03-15"
     },
-    "5b787a6d5bbb243f": {
-      "test_id": "B324",
-      "filename": "src/fscrawler/parser.py",
-      "line": 130,
-      "severity": "HIGH",
-      "confidence": "HIGH",
-      "text": "Use of weak MD5 hash for security. Consider usedforsecurity=False",
-      "acknowledged_at": "2026-03-15"
-    },
-    "5d449addfe3be395": {
-      "test_id": "B110",
-      "filename": "src/fscrawler/parser.py",
-      "line": 146,
-      "severity": "LOW",
-      "confidence": "HIGH",
-      "text": "Try, Except, Pass detected.",
-      "acknowledged_at": "2026-03-15"
-    },
-    "b390c72c21bebe14": {
+    "cb356b482e3ef1ad": {
       "test_id": "B108",
       "filename": "src/fscrawler/settings.py",
       "line": 212,
       "severity": "MEDIUM",
       "confidence": "MEDIUM",
       "text": "Probable insecure usage of temp file/directory.",
-      "acknowledged_at": "2026-03-15"
+      "acknowledged_at": "2026-03-16"
     }
   }
 }

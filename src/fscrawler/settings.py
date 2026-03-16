@@ -161,7 +161,7 @@ def _apply_env_to_raw(raw: dict[str, Any], env: dict[str, str]) -> None:
         if "urls" not in raw["elasticsearch"] and "nodes" not in raw["elasticsearch"]:
             raw["elasticsearch"]["nodes"] = nodes_as_dicts
 
-    for env_key, section, field in [
+    for env_key, section, field_name in [
         ("FSCRAWLER_ELASTICSEARCH_USERNAME", "elasticsearch", "username"),
         ("FSCRAWLER_ELASTICSEARCH_PASSWORD", "elasticsearch", "password"),
         ("FSCRAWLER_ELASTICSEARCH_API_KEY", "elasticsearch", "api_key"),
@@ -175,14 +175,14 @@ def _apply_env_to_raw(raw: dict[str, Any], env: dict[str, str]) -> None:
         ("FSCRAWLER_FS_CONTENT_HASH_AS_ID", "fs", "content_hash_as_id"),
     ]:
         if v := env.get(env_key):
-            _setdefault_nested(raw, section, field, v)
+            _setdefault_nested(raw, section, field_name, v)
 
-    for env_key, section, field in [
+    for env_key, section, field_name in [
         ("FSCRAWLER_ELASTICSEARCH_SSL_VERIFICATION", "elasticsearch", "ssl_verification"),
         ("FSCRAWLER_REST_ENABLE_CORS", "rest", "enable_cors"),
     ]:
         if v := env.get(env_key):
-            _setdefault_nested(raw, section, field, v.lower() not in ("false", "0", "no"))
+            _setdefault_nested(raw, section, field_name, v.lower() not in ("false", "0", "no"))
 
 
 @dataclass
@@ -199,7 +199,7 @@ class FsSettings:
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "FsSettings":
+    def from_dict(cls, data: dict[str, Any]) -> FsSettings:
         """Build FsSettings from a raw (YAML-parsed) dictionary."""
         # --- name ---
         name = data.get("name")
@@ -209,7 +209,7 @@ class FsSettings:
         # --- fs ---
         fs_data: dict[str, Any] = data.get("fs") or {}
         # Java default is /tmp/es — do not require explicit fs.url (Java parity)
-        fs = FsConfig(url=fs_data.get("url") or "/tmp/es")
+        fs = FsConfig(url=fs_data.get("url") or "/tmp/es")  # noqa: S108  # Java parity default
 
         if "update_rate" in fs_data:
             fs.update_rate = parse_duration(str(fs_data["update_rate"]))
@@ -317,7 +317,7 @@ class FsSettings:
         cls,
         path: Path | str,
         environ: dict[str, str] | None = None,
-    ) -> "FsSettings":
+    ) -> FsSettings:
         """Load settings from a YAML file, then apply FSCRAWLER_* env var overrides.
 
         Environment variables (Java parity):

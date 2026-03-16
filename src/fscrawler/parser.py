@@ -8,10 +8,10 @@ http://localhost:9998.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
-import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -107,16 +107,13 @@ class TikaParser:
             if isinstance(raw_content, list):
                 raw_content = "\n".join(raw_content)
             raw_content = str(raw_content).strip()
-            if fs.indexed_chars > 0:
-                content = raw_content[: fs.indexed_chars]
-            else:
-                content = raw_content  # -1 means unlimited
+            content = raw_content[: fs.indexed_chars] if fs.indexed_chars > 0 else raw_content  # -1 means unlimited
 
         # ------------------------------------------------------------------
         # File info
         # ------------------------------------------------------------------
         stat = file_path.stat()
-        now = datetime.now(tz=timezone.utc).isoformat()
+        now = datetime.now(tz=UTC).isoformat()
 
         checksum: str | None = None
         if fs.checksum:
@@ -127,24 +124,18 @@ class TikaParser:
             except ValueError:
                 logger.warning("Unknown checksum algorithm: %s", fs.checksum)
         if fs.content_hash_as_id and checksum is None:
-            checksum = hashlib.md5(raw_bytes).hexdigest()
+            checksum = hashlib.sha256(raw_bytes).hexdigest()
 
         created: str | None = None
-        try:
+        with contextlib.suppress(AttributeError):
             # Platform-specific birth time
             created = datetime.fromtimestamp(
-                stat.st_birthtime, tz=timezone.utc  # type: ignore[attr-defined]
+                stat.st_birthtime, tz=UTC
             ).isoformat()
-        except AttributeError:
-            pass
 
         last_accessed: str | None = None
-        try:
-            last_accessed = datetime.fromtimestamp(
-                stat.st_atime, tz=timezone.utc
-            ).isoformat()
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            last_accessed = datetime.fromtimestamp(stat.st_atime, tz=UTC).isoformat()
 
         file_info = FileInfo(
             filename=file_path.name,
@@ -152,7 +143,7 @@ class TikaParser:
             content_type=content_type,
             filesize=stat.st_size,
             indexing_date=now,
-            last_modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
             created=created,
             last_accessed=last_accessed,
             checksum=checksum,
@@ -163,7 +154,6 @@ class TikaParser:
         # Path info
         # ------------------------------------------------------------------
         root = str(self._settings.fs.url)
-        real = str(file_path.resolve())
         try:
             virtual = "/" + str(file_path.relative_to(root))
         except ValueError:
@@ -221,7 +211,7 @@ class TikaParser:
             raw_content = str(raw_content).strip()
             content = raw_content[: fs.indexed_chars] if fs.indexed_chars > 0 else raw_content
 
-        now = datetime.now(tz=timezone.utc).isoformat()
+        now = datetime.now(tz=UTC).isoformat()
         name = Path(filename).name
         ext = Path(filename).suffix.lstrip(".").lower()
 

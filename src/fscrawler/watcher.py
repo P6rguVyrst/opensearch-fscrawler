@@ -66,9 +66,7 @@ class FsEventHandler(FileSystemEventHandler):
         fs = self._settings.fs
         if fs.includes and not any(fnmatch.fnmatch(name, p) for p in fs.includes):
             return False
-        if any(fnmatch.fnmatch(name, p) for p in fs.excludes):
-            return False
-        return True
+        return not any(fnmatch.fnmatch(name, p) for p in fs.excludes)
 
     def _index(self, path: Path) -> None:
         try:

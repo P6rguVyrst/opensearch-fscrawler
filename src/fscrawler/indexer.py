@@ -7,12 +7,14 @@ import hashlib
 import logging
 import sys
 import threading
-import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fscrawler.client import FsCrawlerClient
 from fscrawler.models import Document
 from fscrawler.settings import FsSettings
+
+if TYPE_CHECKING:
+    from fscrawler.models import FolderDocument
 
 logger = logging.getLogger("fscrawler.indexer")
 
@@ -48,7 +50,7 @@ class BulkIndexer:
     # Context manager
     # ------------------------------------------------------------------
 
-    def __enter__(self) -> "BulkIndexer":
+    def __enter__(self) -> BulkIndexer:
         return self
 
     def __exit__(self, *args: Any) -> None:
@@ -78,11 +80,8 @@ class BulkIndexer:
             ):
                 self._flush_locked()
 
-    def add_folder(self, folder_doc: object) -> None:
+    def add_folder(self, folder_doc: FolderDocument) -> None:
         """Index a directory entry into the folder index."""
-        from fscrawler.models import FolderDocument
-
-        assert isinstance(folder_doc, FolderDocument)
         action = {"index": {"_index": self._folder_index, "_id": folder_doc.path.real}}
         doc_body = folder_doc.to_dict()
         estimated = sys.getsizeof(str(doc_body))
@@ -123,7 +122,7 @@ class BulkIndexer:
     def _make_id(self, file_path: str) -> str:
         if self._filename_as_id:
             return file_path
-        return hashlib.md5(file_path.encode()).hexdigest()
+        return hashlib.sha256(file_path.encode()).hexdigest()
 
     def _flush_locked(self) -> None:
         """Send buffered operations.  Must be called with self._lock held."""

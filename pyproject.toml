@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "opensearch-fscrawler"
-version = "2.10.0"
+version = "0.1.0"
 description = "File system crawler for OpenSearch / Elasticsearch — Python rewrite of FSCrawler"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -14,6 +14,20 @@ authors = [
 ]
 maintainers = [
     { name = "Toomas Ormisson" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Database",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: System :: Filesystems",
 ]
 keywords = ["elasticsearch", "opensearch", "crawler", "indexer", "tika", "fscrawler"]
 dependencies = [
@@ -42,13 +56,31 @@ dev = [
     "types-PyYAML>=6.0",
     "types-python-dateutil>=2.9",
     "responses>=0.25",
+    "bandit[toml]>=1.9.4",
 ]
 
 [project.scripts]
 fscrawler = "fscrawler.cli:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/fscrawler"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    ".claude/",
+    ".claudeignore",
+    ".githooks/",
+    ".security-baseline.json",
+    "AGENTS.md",
+    "TODO.md",
+    "Dockerfile",
+    "docker-compose.yml",
+    "docs/",
+    "htmlcov/",
+    "scripts/",
+    "tests/",
+    "uv.lock",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -80,7 +112,7 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = ["E", "F", "I", "UP", "B", "SIM", "S"]
 ignore = ["E501"]
 
 [tool.mypy]
@@ -88,7 +120,3 @@ python_version = "3.12"
 strict = true
 ignore_missing_imports = true
 
-[dependency-groups]
-dev = [
-    "bandit[toml]>=1.9.4",
-]
