@@ -88,14 +88,33 @@ Implementation notes:
 
 ## §3 · Software Security
 
-- [ ] **`ruff` security ruleset (`S`) not enabled** (§3: "Use `ruff` with security
-  rules (`S` prefix) enabled").  Add `"S"` to `[tool.ruff.lint] select` in
-  `pyproject.toml` and resolve any findings.
+- [x] **`ruff` security ruleset (`S`) not enabled** — `"S"` added to
+  `[tool.ruff.lint] select` in `pyproject.toml`. All findings resolved (see below).
 
-- [ ] **`bandit` not installed or run** (§3: "Use `bandit` for deep static
-  analysis").  Add `bandit` to `[project.optional-dependencies] dev` in
-  `pyproject.toml` and wire it into the lint target in the Makefile (see §4
-  below).
+- [x] **`bandit` not installed or run** — `bandit[toml]` added to
+  `[project.optional-dependencies] dev` and wired into CI (`ci.yml`) with
+  `--baseline .security-baseline.json`.
+
+### Ruff findings resolved when `S` ruleset was enabled
+
+- **S324** (MD5 hash) — replaced with SHA-256 at `indexer.py` and `parser.py`;
+  **SECURITY.md CRYPTO-1** resolved.
+- **S108** (`/tmp/es` default path) — `# noqa: S108` at `settings.py`;
+  tracked as **SECURITY.md CFG-3**. Java parity default; users must set `fs.url`.
+- **S310** (URL open audit) — `# noqa: S310` moved to the `urllib.request.Request`
+  line in `logging_config.py` where the violation actually occurs.
+- **S101** (assert outside tests) — removed entirely; `object` parameter types
+  replaced with proper typed signatures using `TYPE_CHECKING` imports in
+  `cli.py` and `indexer.py`.
+- **SIM102** (nested `if`) — combined into single `if … and …` in `crawler.py`.
+- **SIM103** (redundant `return False` / `return True`) — collapsed to
+  `return not any(…)` in `watcher.py`.
+- **SIM105** / **S110** (`try`-`except`-`pass`) — replaced with
+  `contextlib.suppress(…)` in `parser.py`.
+- **SIM108** (`if`-`else` block) — collapsed to ternary in `parser.py`.
+- **F402** (loop variable shadowing imported name `field`) — loop variable
+  renamed to `field_name` in `settings.py`.
+- **F841** (unused variable `real`) — removed from `parser.py`.
 
 ---
 

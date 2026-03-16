@@ -1,4 +1,9 @@
 # Licensed under the Apache License, Version 2.0
 """FSCrawler — Python rewrite of the file system crawler for OpenSearch/Elasticsearch."""
 
-__version__ = "2.10.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("opensearch-fscrawler")
+except PackageNotFoundError:
+    __version__ = "unknown"

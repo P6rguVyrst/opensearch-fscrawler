@@ -7,8 +7,8 @@ import fnmatch
 import json
 import logging
 import os
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 from fscrawler.settings import FsSettings
 
@@ -146,10 +146,9 @@ class LocalCrawler:
             raise
 
         for entry in sorted(entries, key=lambda e: e.name):
-            if entry.is_symlink():
-                if not fs.follow_symlinks:
-                    logger.debug("Skipping symlink: %s", entry.path)
-                    continue
+            if entry.is_symlink() and not fs.follow_symlinks:
+                logger.debug("Skipping symlink: %s", entry.path)
+                continue
 
             if entry.is_dir(follow_symlinks=fs.follow_symlinks):
                 yield from self._walk(Path(entry.path))

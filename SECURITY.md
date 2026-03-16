@@ -47,11 +47,7 @@ Affected: `src/fscrawler/settings.py:174`, `src/fscrawler/parser.py`.
 
 ### MEDIUM
 
-**SAST-1 — Ruff `S` (security) rules not enabled**
-`pyproject.toml` does not include ruff's `S`-prefix rules, contrary to the
-requirement in `AGENTS.md §3`. `bandit` is enabled and wired into the
-pre-commit hook; ruff `S` rules are not yet active.
-Affected: `pyproject.toml:83`.
+~~**SAST-1 — Ruff `S` (security) rules not enabled**~~ *(resolved)*
 
 **REST-4 — CORS wildcard, no configurable origin list**
 When `rest.enable_cors: true`, `allow_origins=["*"]` is hardcoded. There is no
@@ -83,10 +79,13 @@ Affected: `src/fscrawler/cli.py:321`.
 for reproducible, supply-chain-safe builds.
 Affected: `Dockerfile:9`, `docker-compose.yml:53`.
 
-**CRYPTO-1 — MD5 used for document ID hashing**
-When `filename_as_id: false`, document IDs are derived with MD5, which is
-collision-prone. SHA-256 should be used instead.
-Affected: `src/fscrawler/indexer.py:126`.
+~~**CRYPTO-1 — MD5 used for document ID hashing**~~ *(resolved — replaced with SHA-256)*
+
+**CFG-3 — Default crawl path is `/tmp/es`**
+When `fs.url` is not set in `_settings.yaml`, the crawl root defaults to `/tmp/es`
+to match Java FSCrawler behaviour. This is a world-writable directory on Linux and
+should not be used in production deployments. Users must explicitly set `fs.url`.
+Suppressed: `# noqa: S108` at `src/fscrawler/settings.py` (`FsSettings.from_dict`).
 
 **REST-7 — `/_crawler/settings` endpoint dumps entire `fs` config block**
 The endpoint comment states "credentials redacted" but serialises the full
@@ -146,6 +145,7 @@ make security
 
 ## Reporting
 
-This is a prototype; there is no formal security disclosure process.
-Open an issue at <https://github.com/P6rguVyrst/opensearch-fscrawler/issues>
-and tag it `security`.
+Please **do not** open a public GitHub issue for security vulnerabilities.
+
+Report vulnerabilities privately via [GitHub's private vulnerability reporting](https://github.com/P6rguVyrst/opensearch-fscrawler/security/advisories/new).
+
