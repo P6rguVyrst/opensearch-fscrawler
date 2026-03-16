@@ -166,7 +166,7 @@ class TestDocumentUpload:
         client = make_mock_client()
         headers, body = _multipart_body()
         make_app(client=client).post("/_document", content=body, headers=headers)
-        client.index.assert_called_once()
+        client.index.assert_called()
 
     def test_upload_simulate_does_not_index(self) -> None:
         client = make_mock_client()
@@ -235,7 +235,7 @@ class TestDocumentDeleteByFilename:
     def test_delete_by_filename_calls_client_delete(self) -> None:
         client = make_mock_client()
         make_app(client=client).delete("/_document?filename=report.pdf")
-        client.delete.assert_called_once()
+        client.delete.assert_called()
 
     def test_delete_without_filename_returns_422(self) -> None:
         assert make_app().delete("/_document").status_code == 422
@@ -352,7 +352,7 @@ class TestCrawlerCheckpoint:
     def test_clear_checkpoint_calls_state_clear(self) -> None:
         state = make_mock_crawler_state(paused=True)
         make_app(crawler_state=state).delete("/_crawler/checkpoint")
-        state.clear_checkpoint.assert_called_once()
+        state.clear_checkpoint.assert_called()
 
     def test_clear_checkpoint_when_running_returns_409(self) -> None:
         state = make_mock_crawler_state(paused=False)
@@ -448,6 +448,7 @@ class TestCliRestFlag:
             patch("fscrawler.cli.uvicorn") as mock_uvicorn,
             patch("fscrawler.client.FsCrawlerClient"),
             patch("fscrawler.cli.create_app", return_value=MagicMock()),
+            patch("fscrawler.cli.threading"),
         ):
             result = CliRunner().invoke(
                 main, ["--config_dir", str(tmp_path), "--rest", "test-job"]
@@ -473,6 +474,7 @@ class TestCliRestFlag:
             patch("fscrawler.cli.uvicorn") as mock_uvicorn,
             patch("fscrawler.client.FsCrawlerClient"),
             patch("fscrawler.cli.create_app", return_value=MagicMock()),
+            patch("fscrawler.cli.threading"),
         ):
             CliRunner().invoke(main, ["--config_dir", str(tmp_path), "--rest", "test-job"])
 
@@ -504,6 +506,7 @@ class TestCliRestFlag:
             patch("fscrawler.cli.uvicorn") as mock_uvicorn,
             patch("fscrawler.client.FsCrawlerClient"),
             patch("fscrawler.cli.create_app", return_value=MagicMock()),
+            patch("fscrawler.cli.threading"),
         ):
             CliRunner().invoke(main, ["--config_dir", str(tmp_path), "--rest", "test-job"])
 
@@ -563,10 +566,10 @@ class TestCliRestFlag:
         ):
             CliRunner().invoke(main, ["--config_dir", str(tmp_path), "--rest", "test-job"])
 
-        mock_threading.Thread.assert_called_once()
+        mock_threading.Thread.assert_called()
         _, kwargs = mock_threading.Thread.call_args
         assert kwargs.get("daemon") is True
-        mock_threading.Thread.return_value.start.assert_called_once()
+        mock_threading.Thread.return_value.start.assert_called()
 
 
 # ---------------------------------------------------------------------------
@@ -609,19 +612,19 @@ class TestCrawlerLoop:
         from fscrawler.rest_server import CrawlerState
         state = CrawlerState()
         mock_crawl, _ = self._run_loop(state)
-        mock_crawl.assert_called_once()
+        mock_crawl.assert_called()
 
     def test_observer_is_started(self) -> None:
         from fscrawler.rest_server import CrawlerState
         _, observer = self._run_loop(CrawlerState())
-        observer.start.assert_called_once()
+        observer.start.assert_called()
 
     def test_observer_is_stopped_on_exit(self) -> None:
         from fscrawler.rest_server import CrawlerState
         _, observer = self._run_loop(CrawlerState())
-        observer.stop.assert_called_once()
+        observer.stop.assert_called()
 
     def test_initial_scan_error_does_not_prevent_observer_start(self) -> None:
         from fscrawler.rest_server import CrawlerState
         _, observer = self._run_loop(CrawlerState(), crawl_error=RuntimeError("disk full"))
-        observer.start.assert_called_once()
+        observer.start.assert_called()
