@@ -8,10 +8,12 @@ FROM python:3.12-slim AS builder
 # Install uv (no pip, per AGENTS.md supply-chain policy)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+ENV UV_SYSTEM_PYTHON=1
+
 WORKDIR /build
 
 # Copy lockfile + project metadata first for layer caching
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 
 # Export locked deps to a plain requirements file (no bash-isms needed),
