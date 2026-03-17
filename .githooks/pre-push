@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+set -e
+
+if ! command -v trivy >/dev/null 2>&1; then
+    echo "[pre-push] trivy not found — skipping security scan"
+    echo "[pre-push] Install with: brew install trivy  (macOS) or apt install trivy  (Debian/Ubuntu)"
+    exit 0
+fi
+
+# Read push info from stdin before any other command consumes it
+push_info=$(cat)
+remote_ref=$(printf '%s' "$push_info" | awk '{print $2}')
+
+echo "[pre-push] trivy filesystem scan…"
+trivy fs --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed .
+
+# Full image scan only when pushing main or a version tag
+case "$remote_ref" in
+  refs/heads/main|refs/tags/v*)
+    echo "[pre-push] trivy image scan (building first)…"
+    docker build -t scan-target:local . --quiet
+    trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed scan-target:local
+    ;;
+esac

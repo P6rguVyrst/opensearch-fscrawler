@@ -73,11 +73,7 @@ Affected: `src/fscrawler/cli.py:321`.
 
 ### LOW
 
-**DOCKER-1 — Unpinned `:latest` image tags**
-`Dockerfile` pulls `ghcr.io/astral-sh/uv:latest` and `docker-compose.yml` uses
-`apache/tika:latest-full`. Both should be pinned to a specific version or digest
-for reproducible, supply-chain-safe builds.
-Affected: `Dockerfile:9`, `docker-compose.yml:53`.
+~~**DOCKER-1 — Unpinned `:latest` image tags**~~ *(resolved — `python:3.12-slim` pinned to digest in `Dockerfile`)*
 
 ~~**CRYPTO-1 — MD5 used for document ID hashing**~~ *(resolved — replaced with SHA-256)*
 
@@ -92,6 +88,42 @@ The endpoint comment states "credentials redacted" but serialises the full
 `FsConfig` dataclass. If a credential field is ever added to `FsConfig` it will
 be silently exposed. An explicit allowlist of safe fields should be used.
 Affected: `src/fscrawler/rest_server.py:94-96`.
+
+---
+
+## Trivy Pre-push Hook
+
+[Trivy](https://trivy.dev/) runs automatically before every push to catch known CVEs in
+Python dependencies and the filesystem before they reach CI.
+
+`make develop` installs the hook as part of first-time repository setup. To install it
+separately:
+
+```bash
+make hooks
+```
+
+Trivy itself must be installed separately — it is not a Python dependency:
+
+```bash
+brew install trivy        # macOS
+apt install trivy         # Debian / Ubuntu
+```
+
+**What the hook does:**
+
+- **Every push** — runs `trivy fs .` against Python dependencies and the local filesystem.
+  Exits non-zero (blocking the push) if any unfixed CRITICAL or HIGH CVE is found.
+- **Pushes to `main` or a `v*.*.*` tag** — additionally builds the Docker image and runs
+  `trivy image` against it, mirroring the exact CI gate.
+
+If Trivy is not installed the hook skips gracefully with a warning.
+
+To run the filesystem scan on demand:
+
+```bash
+make trivy
+```
 
 ---
 

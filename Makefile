@@ -1,4 +1,4 @@
-.PHONY: develop install hooks security update-security-baseline test test-integration test-all lint format typecheck up down build clean
+.PHONY: develop install hooks security update-security-baseline trivy test test-integration test-all lint format typecheck up down build clean
 
 PYTHON  = .venv/bin/python
 PYTEST  = .venv/bin/pytest
@@ -19,13 +19,16 @@ install:
 
 hooks:
 	git config core.hooksPath .githooks
-	@echo "Git hooks installed. Pre-commit security scan is now active."
+	@echo "Git hooks installed. Pre-commit and pre-push security scans are now active."
 
 security:
 	$(PYTHON) scripts/security_scan.py
 
 update-security-baseline:
 	$(PYTHON) scripts/update_security_baseline.py
+
+trivy:
+	trivy fs --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed .
 
 test:
 	$(PYTEST) tests/unit -sv --cov=fscrawler --cov-report=term-missing --cov-report=html:htmlcov
