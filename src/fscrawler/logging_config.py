@@ -37,11 +37,12 @@ import logging
 import logging.handlers
 import sys
 import traceback
-import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any
+
+import httpx
 
 from fscrawler import __version__
 
@@ -204,14 +205,7 @@ class _OtlpHttpHandler(logging.Handler):
             ]
         }
         body = json.dumps(payload).encode()
-        req = urllib.request.Request(  # noqa: S310
-            self._url,
-            data=body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310
-            resp.read()
+        httpx.post(self._url, content=body, headers={"Content-Type": "application/json"}, timeout=5)
 
 
 # ---------------------------------------------------------------------------
