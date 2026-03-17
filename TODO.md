@@ -6,6 +6,13 @@ Tracked against `/opt/github/fscrawler/_python/AGENTS.md`.
 
 ## Feature Backlog
 
+- [ ] **Add a git hook to trigger version update prompt** — Add a pre-commit or
+  post-commit hook that detects relevant changes (e.g. on main/release branches
+  or when pushing a tag) and prompts the developer to update the version in
+  `pyproject.toml` before committing/pushing.
+
+
+
 ### Multi-job support
 
 Currently one container = one job. Two approaches to evaluate:

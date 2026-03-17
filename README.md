@@ -21,6 +21,26 @@ A Python 3.12 rewrite of [FSCrawler](https://fscrawler.readthedocs.io/), a file 
 - **Template management** — creates OpenSearch component and index templates automatically
 - **Multi-arch Docker image** — Dockerfile supports linux/amd64 and linux/arm64 (`make build`)
 
+## Docker image
+
+Pre-built multi-arch images (`linux/amd64`, `linux/arm64`) are published to GitHub Container Registry on every release:
+
+```
+ghcr.io/p6rguvyrst/opensearch-fscrawler:latest
+ghcr.io/p6rguvyrst/opensearch-fscrawler:1.2.3   # pin to a specific version
+ghcr.io/p6rguvyrst/opensearch-fscrawler:1.2     # major.minor
+```
+
+```bash
+docker pull ghcr.io/p6rguvyrst/opensearch-fscrawler:latest
+```
+
+In a Kubernetes manifest or Compose file:
+
+```yaml
+image: ghcr.io/p6rguvyrst/opensearch-fscrawler:latest
+```
+
 ## Quick start
 
 ### With Docker Compose
