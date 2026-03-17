@@ -35,7 +35,7 @@ jobs:
         run: uv run bandit -r src/ -c pyproject.toml
 
       - name: Dependency vulnerability scan (pip-audit)
-        run: uv export --frozen --no-dev | uvx pip-audit -r /dev/stdin
+        run: uv export --frozen --no-dev --no-emit-project | uvx pip-audit -r /dev/stdin
 
       - name: Unit tests
         run: uv run pytest tests/unit -sv --cov=fscrawler --cov-report=xml:coverage.xml --cov-report=term-missing
