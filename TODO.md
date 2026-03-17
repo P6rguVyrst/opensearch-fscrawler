@@ -95,6 +95,49 @@ Implementation notes:
 
 ## §3 · Software Security
 
+- [ ] **Run Trivy locally and wire into pre-push git hook** — Trivy image scans
+  are blocking release publishes (2 HIGH CVEs currently unfixed). Shorten the
+  feedback loop by running the same scan locally before a push reaches CI.
+
+  **Install:** `brew install trivy` (macOS) or `apt install trivy` (Debian/Ubuntu).
+
+  **Two scan modes to wire up:**
+
+  1. `trivy fs .` (fast, no Docker build) — scans Python dependencies and the
+     filesystem for known CVEs. Suitable for a **pre-commit** or **pre-push** hook
+     on every branch.
+
+  2. `trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed
+     <image>:<tag>` — mirrors the exact CI gate. Requires `docker build` first.
+     Suitable for a **pre-push** hook gated on pushing to `main` or a `v*.*.*` tag.
+
+  **Recommended hook placement:** `pre-push` — runs `trivy fs .` unconditionally
+  (fast), and additionally runs the full image scan when pushing `main` or a tag.
+
+  **Script to add at `.git/hooks/pre-push`:**
+  ```sh
+  #!/usr/bin/env sh
+  set -e
+  echo "[pre-push] trivy filesystem scan…"
+  trivy fs --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed .
+
+  # Full image scan only when pushing main or a version tag
+  remote_ref=$(cat /dev/stdin | awk '{print $2}')
+  case "$remote_ref" in
+    refs/heads/main|refs/tags/v*)
+      echo "[pre-push] trivy image scan (building first)…"
+      docker build -t scan-target:local . --quiet
+      trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed scan-target:local
+      ;;
+  esac
+  ```
+
+  Also add a `make trivy` target to the Makefile (see §4) for ad-hoc runs:
+  ```makefile
+  trivy:
+      trivy fs --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed .
+  ```
+
 - [x] **`ruff` security ruleset (`S`) not enabled** — `"S"` added to
   `[tool.ruff.lint] select` in `pyproject.toml`. All findings resolved (see below).
 

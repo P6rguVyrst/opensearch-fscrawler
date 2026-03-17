@@ -76,6 +76,11 @@ fscrawler --loop myjob
 - A running [Apache Tika](https://tika.apache.org/) server (`docker run -p 9998:9998 apache/tika:latest-full`)
 - A running OpenSearch or Elasticsearch cluster
 
+**Development only:**
+
+- [uv](https://github.com/astral-sh/uv) — package manager (`brew install uv`)
+- [Trivy](https://trivy.dev/) — vulnerability scanner, required by the pre-push git hook (`brew install trivy`)
+
 ## Configuration
 
 See [docs/configuration.md](docs/configuration.md) for the full settings reference.
