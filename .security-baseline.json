@@ -1,22 +1,3 @@
 {
-  "acknowledged": {
-    "5cb7c17483da755d": {
-      "test_id": "B310",
-      "filename": "src/fscrawler/logging_config.py",
-      "line": 213,
-      "severity": "MEDIUM",
-      "confidence": "HIGH",
-      "text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "acknowledged_at": "2026-03-15"
-    },
-    "cb356b482e3ef1ad": {
-      "test_id": "B108",
-      "filename": "src/fscrawler/settings.py",
-      "line": 212,
-      "severity": "MEDIUM",
-      "confidence": "MEDIUM",
-      "text": "Probable insecure usage of temp file/directory.",
-      "acknowledged_at": "2026-03-16"
-    }
-  }
+  "acknowledged": {}
 }

@@ -115,13 +115,17 @@ class TestFsSettingsFromDict:
         assert settings.elasticsearch.push_templates is True
 
     def test_fs_url_defaults_to_tmp_es(self) -> None:
-        # Java parity: fs.url is not required, defaults to /tmp/es
+        import tempfile
+
+        # Java parity: fs.url is not required, defaults to <tmpdir>/es
         settings = FsSettings.from_dict({"name": "myjob", "fs": {}})
-        assert settings.fs.url == "/tmp/es"
+        assert settings.fs.url == str(Path(tempfile.gettempdir()) / "es")
 
     def test_fs_url_defaults_when_no_fs_block(self) -> None:
+        import tempfile
+
         settings = FsSettings.from_dict({"name": "myjob"})
-        assert settings.fs.url == "/tmp/es"
+        assert settings.fs.url == str(Path(tempfile.gettempdir()) / "es")
 
     def test_name_required(self) -> None:
         with pytest.raises(FsSettingsError, match="name"):

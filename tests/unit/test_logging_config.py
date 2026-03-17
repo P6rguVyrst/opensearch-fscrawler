@@ -223,18 +223,13 @@ class TestOtlpHttpHandler:
         h = _OtlpHttpHandler("http://collector:4318")
         record = _make_record("msg", logging.INFO)
 
-        mock_resp = MagicMock()
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_resp.read = MagicMock(return_value=b"")
-
-        with patch("urllib.request.urlopen", return_value=mock_resp) as mock_open:
+        with patch("httpx.post") as mock_post:
             h.emit(record)
 
-        mock_open.assert_called_once()
-        req = mock_open.call_args[0][0]
-        assert req.get_header("Content-type") == "application/json"
-        body = json.loads(req.data)
+        mock_post.assert_called_once()
+        _, kwargs = mock_post.call_args
+        assert kwargs["headers"] == {"Content-Type": "application/json"}
+        body = json.loads(kwargs["content"])
         assert "resourceLogs" in body
         log_record = body["resourceLogs"][0]["scopeLogs"][0]["logRecords"][0]
         assert log_record["body"]["stringValue"] == "msg"
@@ -246,16 +241,11 @@ class TestOtlpHttpHandler:
         except TypeError:
             record = _make_record("err", logging.ERROR, exc_info=sys.exc_info())
 
-        mock_resp = MagicMock()
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_resp.read = MagicMock(return_value=b"")
-
-        with patch("urllib.request.urlopen", return_value=mock_resp) as mock_open:
+        with patch("httpx.post") as mock_post:
             h.emit(record)
 
-        req = mock_open.call_args[0][0]
-        body = json.loads(req.data)
+        _, kwargs = mock_post.call_args
+        body = json.loads(kwargs["content"])
         attrs = body["resourceLogs"][0]["scopeLogs"][0]["logRecords"][0]["attributes"]
         keys = {a["key"] for a in attrs}
         assert "exception.type" in keys
@@ -265,7 +255,7 @@ class TestOtlpHttpHandler:
         h = _OtlpHttpHandler("http://dead:9999")
         record = _make_record("msg")
         # handleError writes to stderr — just ensure no exception propagates
-        with patch("urllib.request.urlopen", side_effect=OSError("refused")):
+        with patch("httpx.post", side_effect=OSError("refused")):
             h.emit(record)  # must not raise
 
 

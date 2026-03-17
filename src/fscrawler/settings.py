@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import re
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -208,8 +209,8 @@ class FsSettings:
 
         # --- fs ---
         fs_data: dict[str, Any] = data.get("fs") or {}
-        # Java default is /tmp/es — do not require explicit fs.url (Java parity)
-        fs = FsConfig(url=fs_data.get("url") or "/tmp/es")  # noqa: S108  # Java parity default
+        # Java default is <tmpdir>/es — do not require explicit fs.url (Java parity)
+        fs = FsConfig(url=fs_data.get("url") or str(Path(tempfile.gettempdir()) / "es"))
 
         if "update_rate" in fs_data:
             fs.update_rate = parse_duration(str(fs_data["update_rate"]))
