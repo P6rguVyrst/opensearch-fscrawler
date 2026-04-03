@@ -11,6 +11,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from fscrawler.models import Document, FileInfo, Meta, PathInfo
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -22,6 +24,49 @@ def load_fixture(name: str) -> dict[str, Any]:
     """Load a JSON fixture from tests/data/."""
     with open(DATA_DIR / name) as f:
         return json.load(f)  # type: ignore[no-any-return]
+
+
+def make_settings(**overrides: Any) -> Any:
+    """Build an FsSettings instance with sensible defaults.
+
+    Accepts top-level keys (fs, elasticsearch, rest) as keyword overrides.
+    """
+    from fscrawler.settings import FsSettings
+
+    base: dict[str, Any] = {
+        "name": "test",
+        "fs": {"url": "/data"},
+        "elasticsearch": {
+            "nodes": [{"url": "http://localhost:9200"}],
+            "index": "test_docs",
+            "index_folder": "test_folder",
+            "bulk_size": 100,
+            "byte_size": "10mb",
+        },
+    }
+    base.update(overrides)
+    return FsSettings.from_dict(base)
+
+
+def make_document(path: str = "/data/test.txt", content: str = "hello") -> Document:
+    """Create a minimal Document for testing."""
+    return Document(
+        content=content,
+        file=FileInfo(
+            filename=Path(path).name,
+            extension=Path(path).suffix.lstrip("."),
+            content_type="text/plain",
+            filesize=len(content),
+            indexing_date="2024-01-01T00:00:00Z",
+            created=None,
+            last_modified="2024-01-01T00:00:00Z",
+            last_accessed=None,
+            checksum=None,
+            url=path,
+        ),
+        path=PathInfo(real=path, root="/data", virtual="/" + Path(path).name),
+        meta=Meta(),
+    )
 
 
 # ---------------------------------------------------------------------------

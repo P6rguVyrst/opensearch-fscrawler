@@ -9,40 +9,8 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from fscrawler.models import Document, FileInfo, Meta, PathInfo
 from fscrawler.settings import FsSettings
-
-
-def make_settings(**es_overrides: Any) -> FsSettings:
-    es: dict[str, Any] = {
-        "nodes": [{"url": "http://localhost:9200"}],
-        "index": "test_docs",
-        "bulk_size": 3,
-
-        "byte_size": "10mb",
-    }
-    es.update(es_overrides)
-    return FsSettings.from_dict({"name": "test", "fs": {"url": "/data"}, "elasticsearch": es})
-
-
-def make_document(path: str = "/data/test.txt", content: str = "hello") -> Document:
-    return Document(
-        content=content,
-        file=FileInfo(
-            filename="test.txt",
-            extension="txt",
-            content_type="text/plain",
-            filesize=len(content),
-            indexing_date="2024-01-01T00:00:00Z",
-            created=None,
-            last_modified="2024-01-01T00:00:00Z",
-            last_accessed=None,
-            checksum=None,
-            url=path,
-        ),
-        path=PathInfo(real=path, root="/data", virtual="/test.txt"),
-        meta=Meta(),
-    )
+from tests.conftest import make_document, make_settings
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +23,7 @@ class TestIndexerBuffering:
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
 
-        settings = make_settings(bulk_size=3)
+        settings = make_settings(elasticsearch={"bulk_size": 3})
         client = FsCrawlerClient(settings)
         indexer = BulkIndexer(client, settings)
 
@@ -69,7 +37,7 @@ class TestIndexerBuffering:
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
 
-        settings = make_settings(bulk_size=3)
+        settings = make_settings(elasticsearch={"bulk_size": 3})
         client = FsCrawlerClient(settings)
         indexer = BulkIndexer(client, settings)
 
@@ -83,7 +51,7 @@ class TestIndexerBuffering:
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
 
-        settings = make_settings(bulk_size=10)
+        settings = make_settings(elasticsearch={"bulk_size": 10})
         client = FsCrawlerClient(settings)
         indexer = BulkIndexer(client, settings)
 
@@ -97,7 +65,7 @@ class TestIndexerBuffering:
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
 
-        settings = make_settings(bulk_size=10)
+        settings = make_settings(elasticsearch={"bulk_size": 10})
         client = FsCrawlerClient(settings)
         indexer = BulkIndexer(client, settings)
 
@@ -183,7 +151,7 @@ class TestIndexerDelete:
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
 
-        settings = make_settings(bulk_size=1)
+        settings = make_settings(elasticsearch={"bulk_size": 1})
         client = FsCrawlerClient(settings)
         indexer = BulkIndexer(client, settings)
 
@@ -198,7 +166,7 @@ class TestIndexerDelete:
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
 
-        settings = make_settings(bulk_size=1)
+        settings = make_settings(elasticsearch={"bulk_size": 1})
         client = FsCrawlerClient(settings)
         indexer = BulkIndexer(client, settings)
 
@@ -280,7 +248,7 @@ class TestByteEstimation:
         from fscrawler.indexer import BulkIndexer
 
         # Set byte_size to 500 bytes — a single document's JSON should be ~300-400 bytes
-        settings = make_settings(bulk_size=1000, byte_size=500)
+        settings = make_settings(elasticsearch={"bulk_size": 1000, "byte_size": 500})
         client = FsCrawlerClient(settings)
         indexer = BulkIndexer(client, settings)
 
@@ -301,7 +269,7 @@ class TestIndexerContextManager:
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
 
-        settings = make_settings(bulk_size=100)
+        settings = make_settings(elasticsearch={"bulk_size": 100})
         client = FsCrawlerClient(settings)
 
         with BulkIndexer(client, settings) as indexer:

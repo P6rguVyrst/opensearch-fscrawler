@@ -8,18 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fscrawler.settings import FsSettings
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def make_settings(**overrides) -> FsSettings:
-    base = {"name": "test", "fs": {"url": "/data"}}
-    base.update(overrides)
-    return FsSettings.from_dict(base)
+from tests.conftest import make_settings
 
 
 def make_handler(settings=None, paused=False):

@@ -2,32 +2,12 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from fscrawler.settings import FsSettings
-
-DATA_DIR = Path(__file__).parent.parent / "data"
-
-
-def load_fixture(name: str) -> dict[str, Any]:
-    with open(DATA_DIR / name) as f:
-        return json.load(f)  # type: ignore[no-any-return]
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def make_settings(**kwargs: Any) -> FsSettings:
-    base: dict[str, Any] = {"name": "test", "fs": {"url": "/data"}}
-    base.update(kwargs)
-    return FsSettings.from_dict(base)
+from tests.conftest import load_fixture, make_settings
 
 
 # ---------------------------------------------------------------------------
