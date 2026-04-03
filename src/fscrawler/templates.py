@@ -61,8 +61,3 @@ def get_component_templates() -> list[tuple[str, dict[str, Any]]]:
 def get_index_templates() -> list[tuple[str, dict[str, Any]]]:
     """Return (name, body) tuples for all index templates."""
     return [(f"fscrawler_{name}", _load(name)) for name in INDEX_TEMPLATES]
-
-
-def mapping_history_template() -> dict[str, Any]:
-    """Return the history mapping component template body."""
-    return _load("mapping_history")

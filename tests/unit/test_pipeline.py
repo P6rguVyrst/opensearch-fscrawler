@@ -22,11 +22,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from fscrawler.settings import FsSettings
-from fscrawler.templates import (
-    get_component_templates,
-    get_index_templates,
-    mapping_history_template,
-)
+from fscrawler.templates import get_component_templates, get_index_templates
 
 
 def make_settings(url: str, **overrides: Any) -> FsSettings:
@@ -216,17 +212,14 @@ class TestFolderDocumentShape:
 
 
 class TestHistoryTemplate:
-    def test_mapping_history_template_has_superseded_fields(self) -> None:
-        template = mapping_history_template()
-        props = template["template"]["mappings"]["properties"]
+    def test_history_component_has_superseded_fields(self) -> None:
+        templates = dict(get_component_templates())
+        body = templates["fscrawler_mapping_history"]
+        props = body["template"]["mappings"]["properties"]
         assert "superseded_date" in props
         assert props["superseded_date"]["type"] == "date"
         assert "superseded_by" in props
         assert props["superseded_by"]["type"] == "keyword"
-
-    def test_components_include_history(self) -> None:
-        names = [name for name, _ in get_component_templates()]
-        assert "fscrawler_mapping_history" in names
 
     def test_index_templates_includes_history(self) -> None:
         templates = get_index_templates()

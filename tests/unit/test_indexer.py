@@ -350,6 +350,27 @@ class TestIndexerHistory:
         assert len(delete_actions) == 1
 
 
+    def test_archive_continues_on_get_error(self, mock_opensearch_client: MagicMock) -> None:
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = self._make_history_settings()
+        client = FsCrawlerClient(settings)
+
+        # Simulate a network error when fetching existing doc
+        mock_opensearch_client.get.side_effect = ConnectionError("cluster down")
+
+        indexer = BulkIndexer(client, settings)
+        doc = make_document("/data/test.txt")
+        indexer.add(doc)
+        indexer.flush()
+
+        # Should still index the new doc despite the get failure
+        body = mock_opensearch_client.bulk.call_args[1]["body"]
+        index_actions = [op for op in body if "index" in op]
+        assert len(index_actions) == 1
+
+
 class TestIndexerContextManager:
     def test_context_manager_flushes_on_exit(self, mock_opensearch_client: MagicMock) -> None:
         from fscrawler.client import FsCrawlerClient

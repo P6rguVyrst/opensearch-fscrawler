@@ -115,7 +115,7 @@ relative path from the crawl root (e.g., `/reports/Q1.pdf`).
 | `username` | Deprecated | ✅ Still accepted | ✅ Compatible |
 | `password` | Deprecated, `@JsonIgnore` in Java | ✅ Accepted | ✅ Compatible |
 | `ssl_verification` | `boolean` | ✅ | ✅ Compatible |
-| `index_history` | ❌ Not available | ✅ String, auto-derived as `{name}_docs_history` | Python addition — target index for document version history |
+| `index_history` | ❌ Not available | ✅ String, auto-derived as `fscrawler_history_{name}` | Python addition — target index for document version history |
 | `push_templates` | `boolean` | ✅ | ✅ Compatible |
 | `ca_certificate` | Path to CA cert file | ❌ Silently ignored | |
 | `pipeline` | Ingest pipeline name | ❌ Silently ignored | |
@@ -196,11 +196,28 @@ These defaults differ between the two editions.  Explicit values in
    index is the system of record. To restore the previous behavior, set
    `remove_deleted: true` in your `_settings.yaml`.
 
+6. **Index naming convention changed.** Default index names changed from
+   `{job}_docs` / `{job}_folder` to `fscrawler_docs_{job}` /
+   `fscrawler_folders_{job}` / `fscrawler_history_{job}`. If you set explicit
+   `index` / `index_folder` values in `_settings.yaml`, those are still
+   respected. Otherwise, existing indices under old names will be orphaned.
+
+7. **Per-index alias component templates removed.** The old system created a
+   `fscrawler_{index}_alias` component template that added a job-name alias to
+   each index. This has been removed — query indices by their full name instead
+   of the alias.
+
+8. **Watcher does not archive history.** When `keep_history: true`, only batch
+   crawls archive superseded documents. Real-time watchdog events overwrite
+   documents without archival.
+
 ### Migration steps
 
-1. Delete existing indices (or create new ones with different names)
+1. Delete existing indices and old `fscrawler_*` templates from OpenSearch
 2. Remove `filename_as_id` and `content_hash_as_id` from `_settings.yaml`
-3. Run a full crawl to reindex all documents with new IDs
+3. If using explicit `index` / `index_folder` values, update them to the new
+   `fscrawler_docs_{job}` convention or keep the old names (they still work)
+4. Run a full crawl to reindex all documents with new IDs
 
 ---
 
