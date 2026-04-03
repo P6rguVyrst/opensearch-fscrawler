@@ -155,6 +155,9 @@ def _run_rest(settings_file: Path, job_dir: Path) -> None:
     client.ensure_index(settings.elasticsearch.index)
     client.ensure_index(settings.elasticsearch.index_folder)
 
+    if settings.fs.keep_history:
+        client.ensure_index(settings.elasticsearch.index_history)
+
     crawler_state = CrawlerState()
 
     # Background crawler thread — mirrors Java's dual REST+crawl mode.
@@ -282,6 +285,9 @@ def _run(job_name: str, settings_file: Path, job_dir: Path, loop: bool) -> None:
     client.ensure_index(settings.elasticsearch.index)
     client.ensure_index(settings.elasticsearch.index_folder)
 
+    if settings.fs.keep_history:
+        client.ensure_index(settings.elasticsearch.index_history)
+
     parser = TikaParser(settings, tika_url=settings.fs.tika_url)
 
     # Always do an initial full scan
@@ -321,7 +327,8 @@ fs:
   index_content: true
   add_filesize: true
   index_folders: true
-  checksum: "MD5"
+  checksum: "sha256"
+  keep_history: false
 elasticsearch:
   nodes:
     - url: "http://localhost:9200"
