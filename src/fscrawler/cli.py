@@ -178,7 +178,7 @@ def _run_rest(settings_file: Path, job_dir: Path) -> None:
     # log_config=None prevents uvicorn from calling logging.config.dictConfig()
     # with its own LOGGING_CONFIG, which would install plain-text handlers on
     # the uvicorn.* loggers and break our OTel JSON formatter.
-    uvicorn.run(app, host=host, port=port, log_config=None)
+    uvicorn.run(app, host=host, port=port, log_config=None)  # pragma: no cover
 
 
 def _crawler_loop(
@@ -339,5 +339,5 @@ rest:
     click.echo("Edit it and then run fscrawler without --setup.")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()
