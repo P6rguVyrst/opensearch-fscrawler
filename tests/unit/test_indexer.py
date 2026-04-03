@@ -384,3 +384,82 @@ class TestIndexerContextManager:
 
         # Should flush on __exit__
         mock_opensearch_client.bulk.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Concurrency
+# ---------------------------------------------------------------------------
+
+
+class TestIndexerConcurrency:
+    def test_concurrent_adds_no_lost_writes(self, mock_opensearch_client: MagicMock) -> None:
+        """Spawn N threads each calling add(); verify no documents are lost."""
+        import threading
+
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        n_threads = 10
+        settings = make_settings(elasticsearch={"bulk_size": 1000})
+        client = FsCrawlerClient(settings)
+        indexer = BulkIndexer(client, settings)
+
+        def worker(i: int) -> None:
+            indexer.add(make_document(f"/data/doc{i}.txt", content=f"content {i}"))
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        indexer.flush()
+
+        # Collect all index actions across all bulk calls
+        total_docs = 0
+        for call in mock_opensearch_client.bulk.call_args_list:
+            body = call[1].get("body") or call[0][0]
+            index_actions = [op for op in body if isinstance(op, dict) and "index" in op]
+            total_docs += len(index_actions)
+        assert total_docs == n_threads
+
+
+# ---------------------------------------------------------------------------
+# Bulk error handling
+# ---------------------------------------------------------------------------
+
+
+class TestBulkErrorHandling:
+    def test_bulk_errors_logged_but_not_raised(self, mock_opensearch_client: MagicMock) -> None:
+        """When bulk response has errors=True, indexer logs but does not raise."""
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        mock_opensearch_client.bulk.return_value = {
+            "errors": True,
+            "items": [{"index": {"_id": "1", "status": 429, "error": {"reason": "rejected"}}}],
+        }
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        indexer = BulkIndexer(client, settings)
+
+        # Should not raise
+        indexer.add(make_document("/data/test.txt"))
+
+    def test_bulk_exception_logged_but_not_raised(self, mock_opensearch_client: MagicMock) -> None:
+        """When client.bulk() raises, indexer catches and clears the buffer."""
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        mock_opensearch_client.bulk.side_effect = ConnectionError("cluster down")
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        indexer = BulkIndexer(client, settings)
+
+        # Should not raise
+        indexer.add(make_document("/data/test.txt"))
+
+        # Buffer should be cleared after failed flush
+        assert len(indexer._buffer) == 0

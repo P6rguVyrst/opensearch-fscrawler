@@ -211,6 +211,18 @@ class TestDocumentUpload:
         resp = make_app(parser=parser).post("/_document", content=body, headers=headers)
         assert resp.status_code == 500
 
+    def test_upload_simulate_and_debug_does_not_index_but_returns_doc(self) -> None:
+        """simulate=true skips indexing, debug=true still includes doc in response."""
+        client = make_mock_client()
+        parser = make_mock_parser()
+        headers, body = _multipart_body()
+        resp = make_app(client=client, parser=parser).post(
+            "/_document?simulate=true&debug=true", content=body, headers=headers
+        ).json()
+        client.index.assert_not_called()
+        assert "doc" in resp
+        assert resp.get("ok") is True
+
 
 # ---------------------------------------------------------------------------
 # PUT /_document/{id} – upload with explicit path id
