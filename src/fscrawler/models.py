@@ -3,8 +3,14 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any
+
+
+def make_doc_id(virtual_path: str) -> str:
+    """Compute the canonical document ID for a given virtual path."""
+    return hashlib.sha256(virtual_path.encode()).hexdigest()
 
 
 @dataclass
