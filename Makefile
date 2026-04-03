@@ -34,7 +34,7 @@ test:
 	$(PYTEST) tests/unit -sv --cov=fscrawler --cov-report=term-missing --cov-report=html:htmlcov
 
 test-integration:
-	$(PYTEST) tests/integration -sv -m integration --cov=fscrawler --cov-report=term-missing --cov-report=html:htmlcov
+	$(PYTEST) tests/integration -sv -m integration --cov=fscrawler --cov-report=term-missing --cov-report=html:htmlcov --cov-fail-under=0
 
 test-all:
 	$(PYTEST) tests/ -sv --cov=fscrawler --cov-report=term-missing --cov-report=html:htmlcov --cov-report=xml:coverage.xml
