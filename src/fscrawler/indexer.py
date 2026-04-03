@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
-import sys
 import threading
 from typing import TYPE_CHECKING, Any
 
@@ -66,8 +66,8 @@ class BulkIndexer:
         action = {"index": {"_index": self._index, "_id": doc_id}}
         doc_body = doc.to_dict()
 
-        # Estimate byte size: rough approximation
-        estimated = sys.getsizeof(str(doc_body))
+        # Estimate byte size: use actual JSON-serialized size
+        estimated = len(json.dumps(doc_body, default=str).encode("utf-8"))
 
         with self._lock:
             self._buffer.append(action)
@@ -84,7 +84,7 @@ class BulkIndexer:
         """Index a directory entry into the folder index."""
         action = {"index": {"_index": self._folder_index, "_id": folder_doc.path.real}}
         doc_body = folder_doc.to_dict()
-        estimated = sys.getsizeof(str(doc_body))
+        estimated = len(json.dumps(doc_body, default=str).encode("utf-8"))
 
         with self._lock:
             self._buffer.append(action)

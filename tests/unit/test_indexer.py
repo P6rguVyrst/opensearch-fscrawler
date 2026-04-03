@@ -269,6 +269,33 @@ class TestContentHashAsId:
         mock_opensearch_client.bulk.assert_not_called()
 
 
+class TestByteEstimation:
+    def test_byte_size_threshold_triggers_flush_accurately(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        """Verify flush triggers based on actual JSON-serialized size, not Python object size."""
+        import json
+
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        # Set byte_size to 500 bytes — a single document's JSON should be ~300-400 bytes
+        settings = make_settings(bulk_size=1000, byte_size=500)
+        client = FsCrawlerClient(settings)
+        indexer = BulkIndexer(client, settings)
+
+        doc = make_document("/data/doc.txt", content="x" * 200)
+        doc_json_size = len(json.dumps(doc.to_dict()).encode("utf-8"))
+
+        # Add documents until we expect to exceed 500 bytes
+        docs_needed = (500 // doc_json_size) + 1
+        for i in range(docs_needed):
+            indexer.add(make_document(f"/data/doc{i}.txt", content="x" * 200))
+
+        # Should have flushed by now
+        assert mock_opensearch_client.bulk.called
+
+
 class TestIndexerContextManager:
     def test_context_manager_flushes_on_exit(self, mock_opensearch_client: MagicMock) -> None:
         from fscrawler.client import FsCrawlerClient
