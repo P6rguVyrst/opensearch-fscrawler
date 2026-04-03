@@ -3,6 +3,9 @@
 
 Templates are compatible with both Elasticsearch 7.x/8.x/9.x and OpenSearch 1.x/2.x/3.x.
 
+All template bodies live in _templates/*.json — this module loads them and
+wires up the per-index naming.
+
 Shared component templates (created once per cluster):
   fscrawler_settings_total_fields
   fscrawler_mapping_file
@@ -47,6 +50,15 @@ def _load(name: str) -> dict[str, Any]:
         return json.load(f)  # type: ignore[no-any-return]
 
 
+def _load_index_template(name: str, index_name: str) -> dict[str, Any]:
+    """Load an index template JSON and substitute the per-index alias placeholder."""
+    raw = (_TEMPLATES_DIR / f"{name}.json").read_text()
+    raw = raw.replace("{{INDEX_ALIAS}}", f"fscrawler_{index_name}_alias")
+    body = json.loads(raw)
+    body["index_patterns"] = [index_name]
+    return body  # type: ignore[no-any-return]
+
+
 # ---------------------------------------------------------------------------
 # Shared component templates (one per cluster, not per index)
 # ---------------------------------------------------------------------------
@@ -76,25 +88,6 @@ def alias_template(alias_name: str) -> dict[str, Any]:
 # Index templates
 # ---------------------------------------------------------------------------
 
-_DOCS_COMPONENTS = [
-    "fscrawler_settings_total_fields",
-    "fscrawler_mapping_attributes",
-    "fscrawler_mapping_file",
-    "fscrawler_mapping_path",
-    "fscrawler_mapping_attachment",
-    "fscrawler_mapping_content",
-    "fscrawler_mapping_meta",
-]
-
-_FOLDER_COMPONENTS = [
-    "fscrawler_settings_total_fields",
-    "fscrawler_mapping_path",
-]
-
-_HISTORY_COMPONENTS = _DOCS_COMPONENTS + [
-    "fscrawler_mapping_history",
-]
-
 
 def get_index_templates(
     docs_index: str,
@@ -109,31 +102,19 @@ def get_index_templates(
     for index_name in [docs_index, folder_index] + ([history_index] if history_index else []):
         result.append((f"fscrawler_{index_name}_alias", alias_template(job_name)))
 
-    # Index templates
+    # Index templates — loaded from JSON, parameterised with the index name
     result.append((
         f"fscrawler_{docs_index}_docs",
-        {
-            "index_patterns": [docs_index],
-            "priority": 500,
-            "composed_of": [f"fscrawler_{docs_index}_alias"] + _DOCS_COMPONENTS,
-        },
+        _load_index_template("index_template_docs", docs_index),
     ))
     result.append((
         f"fscrawler_{folder_index}_folders",
-        {
-            "index_patterns": [folder_index],
-            "priority": 500,
-            "composed_of": [f"fscrawler_{folder_index}_alias"] + _FOLDER_COMPONENTS,
-        },
+        _load_index_template("index_template_folders", folder_index),
     ))
     if history_index:
         result.append((
             f"fscrawler_{history_index}_history",
-            {
-                "index_patterns": [history_index],
-                "priority": 500,
-                "composed_of": [f"fscrawler_{history_index}_alias"] + _HISTORY_COMPONENTS,
-            },
+            _load_index_template("index_template_history", history_index),
         ))
 
     return result

@@ -1,0 +1,8 @@
+{
+  "priority": 500,
+  "composed_of": [
+    "{{INDEX_ALIAS}}",
+    "fscrawler_settings_total_fields",
+    "fscrawler_mapping_path"
+  ]
+}
