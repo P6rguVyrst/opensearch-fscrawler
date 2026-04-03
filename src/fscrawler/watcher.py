@@ -11,9 +11,15 @@ from __future__ import annotations
 import fnmatch
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from watchdog.events import FileSystemEventHandler
+
+if TYPE_CHECKING:
+    from fscrawler.client import FsCrawlerClient
+    from fscrawler.parser import TikaParser
+    from fscrawler.rest_server import CrawlerState
+    from fscrawler.settings import FsSettings
 
 logger = logging.getLogger("fscrawler.watcher")
 
@@ -23,10 +29,10 @@ class FsEventHandler(FileSystemEventHandler):
 
     def __init__(
         self,
-        settings: Any,
-        client: Any,
-        parser: Any,
-        crawler_state: Any,
+        settings: FsSettings,
+        client: FsCrawlerClient,
+        parser: TikaParser,
+        crawler_state: CrawlerState,
     ) -> None:
         super().__init__()
         self._settings = settings
