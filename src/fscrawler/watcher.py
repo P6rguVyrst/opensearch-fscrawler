@@ -84,6 +84,8 @@ class FsEventHandler(FileSystemEventHandler):
         return not any(fnmatch.fnmatch(name, p) for p in fs.excludes)
 
     def _index(self, path: Path) -> None:
+        if path.is_dir():
+            return
         try:
             doc = self._parser.parse(path)
             doc_id = hashlib.sha256(doc.path.virtual.encode()).hexdigest()
