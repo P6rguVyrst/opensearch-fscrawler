@@ -73,14 +73,19 @@ def mapping_path_template() -> dict[str, Any]:
                     "analyzer": {
                         "fscrawler_path": {
                             "tokenizer": "fscrawler_path",
-                            "char_filter": ["windows_separator"],
+                            "char_filter": ["leading_slash", "windows_separator"],
                         }
                     },
                     "char_filter": {
                         "windows_separator": {
                             "type": "mapping",
                             "mappings": ["\\\\ => /"],
-                        }
+                        },
+                        "leading_slash": {
+                            "type": "pattern_replace",
+                            "pattern": "^/",
+                            "replacement": "",
+                        },
                     },
                     "tokenizer": {
                         "fscrawler_path": {"type": "path_hierarchy"}
