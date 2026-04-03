@@ -143,16 +143,19 @@ class TestTikaParser:
         expected = hashlib.md5(content).hexdigest()
         assert result.file.checksum == expected
 
-    def test_no_checksum_when_not_configured(self, mock_tika: Any, tmp_path: Path) -> None:
+    def test_default_checksum_is_sha256(self, mock_tika: Any, tmp_path: Path) -> None:
+        import hashlib
+
         from fscrawler.parser import TikaParser
 
-        settings = make_settings(checksum=None)
+        settings = make_settings()
         parser = TikaParser(settings)
         test_file = tmp_path / "test.txt"
         test_file.write_bytes(b"no checksum")
 
         result = parser.parse(test_file)
-        assert result.file.checksum is None
+        expected = hashlib.sha256(b"no checksum").hexdigest()
+        assert result.file.checksum == expected
 
     def test_extracts_file_size(self, mock_tika: Any, tmp_path: Path) -> None:
         from fscrawler.parser import TikaParser
@@ -195,3 +198,71 @@ class TestTikaParser:
             test_file.write_bytes(b"content")
             with pytest.raises(TikaUnavailableError):
                 parser.parse(test_file)
+
+
+class TestChecksumAlwaysComputed:
+    def test_checksum_computed_with_default_settings(
+        self, tmp_path: Path, mock_tika: Any
+    ) -> None:
+        """With default settings (checksum='sha256'), checksum is always set."""
+        import hashlib
+
+        from tests.conftest import make_settings
+
+        from fscrawler.parser import TikaParser
+
+        settings = make_settings()
+        parser = TikaParser(settings, tika_url="http://localhost:9998")
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello world")
+
+        doc = parser.parse(test_file)
+
+        expected = hashlib.sha256(b"hello world").hexdigest()
+        assert doc.file.checksum == expected
+
+    def test_checksum_uses_configured_algorithm(
+        self, tmp_path: Path, mock_tika: Any
+    ) -> None:
+        """When checksum is set to MD5, use MD5."""
+        import hashlib
+
+        from tests.conftest import make_settings
+
+        from fscrawler.parser import TikaParser
+
+        settings = make_settings(fs={"url": str(tmp_path), "checksum": "MD5"})
+        parser = TikaParser(settings, tika_url="http://localhost:9998")
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello world")
+
+        doc = parser.parse(test_file)
+
+        expected = hashlib.md5(b"hello world").hexdigest()  # noqa: S324
+        assert doc.file.checksum == expected
+
+    def test_unknown_algorithm_falls_back_to_sha256(
+        self, tmp_path: Path, mock_tika: Any, caplog: Any
+    ) -> None:
+        """Unknown algorithm falls back to sha256 with a warning."""
+        import hashlib
+        import logging
+
+        from tests.conftest import make_settings
+
+        from fscrawler.parser import TikaParser
+
+        settings = make_settings(fs={"url": str(tmp_path), "checksum": "bogus_algo"})
+        parser = TikaParser(settings, tika_url="http://localhost:9998")
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello world")
+
+        with caplog.at_level(logging.WARNING, logger="fscrawler.parser"):
+            doc = parser.parse(test_file)
+
+        expected = hashlib.sha256(b"hello world").hexdigest()
+        assert doc.file.checksum == expected
+        assert "falling back to sha256" in caplog.text

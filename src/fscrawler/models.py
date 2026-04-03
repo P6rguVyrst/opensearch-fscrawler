@@ -3,8 +3,14 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any
+
+
+def make_doc_id(virtual_path: str) -> str:
+    """Compute the canonical document ID for a given virtual path."""
+    return hashlib.sha256(virtual_path.encode()).hexdigest()
 
 
 @dataclass
@@ -91,63 +97,18 @@ class Document:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a dict suitable for OpenSearch indexing."""
+        from dataclasses import asdict
+
+        file_dict = {k: v for k, v in asdict(self.file).items() if v is not None}
+        file_dict["indexed_chars"] = len(self.content) if self.content is not None else 0
+
         result: dict[str, Any] = {
-            "file": {
-                k: v
-                for k, v in {
-                    "content_type": self.file.content_type,
-                    "filename": self.file.filename,
-                    "extension": self.file.extension,
-                    "filesize": self.file.filesize,
-                    "indexed_chars": len(self.content) if self.content is not None else 0,
-                    "indexing_date": self.file.indexing_date,
-                    "last_modified": self.file.last_modified,
-                    "created": self.file.created,
-                    "last_accessed": self.file.last_accessed,
-                    "checksum": self.file.checksum,
-                    "url": self.file.url,
-                }.items()
-                if v is not None
-            },
-            "path": {
-                "real": self.path.real,
-                "root": self.path.root,
-                "virtual": self.path.virtual,
-            },
+            "@timestamp": self.file.indexing_date,
+            "file": file_dict,
+            "path": asdict(self.path),
         }
 
-        # Meta — only include non-None fields
-        meta_dict = {
-            k: v
-            for k, v in {
-                "author": self.meta.author,
-                "date": self.meta.date,
-                "keywords": self.meta.keywords,
-                "title": self.meta.title,
-                "language": self.meta.language,
-                "format": self.meta.format,
-                "identifier": self.meta.identifier,
-                "contributor": self.meta.contributor,
-                "coverage": self.meta.coverage,
-                "modifier": self.meta.modifier,
-                "creator_tool": self.meta.creator_tool,
-                "publisher": self.meta.publisher,
-                "relation": self.meta.relation,
-                "rights": self.meta.rights,
-                "source": self.meta.source,
-                "type": self.meta.type,
-                "description": self.meta.description,
-                "created": self.meta.created,
-                "print_date": self.meta.print_date,
-                "metadata_date": self.meta.metadata_date,
-                "latitude": self.meta.latitude,
-                "longitude": self.meta.longitude,
-                "altitude": self.meta.altitude,
-                "rating": self.meta.rating,
-                "comments": self.meta.comments,
-            }.items()
-            if v is not None
-        }
+        meta_dict = {k: v for k, v in asdict(self.meta).items() if v is not None}
         if meta_dict:
             result["meta"] = meta_dict
 

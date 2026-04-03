@@ -2,32 +2,12 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from fscrawler.settings import FsSettings
-
-DATA_DIR = Path(__file__).parent.parent / "data"
-
-
-def load_fixture(name: str) -> dict[str, Any]:
-    with open(DATA_DIR / name) as f:
-        return json.load(f)  # type: ignore[no-any-return]
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def make_settings(**kwargs: Any) -> FsSettings:
-    base: dict[str, Any] = {"name": "test", "fs": {"url": "/data"}}
-    base.update(kwargs)
-    return FsSettings.from_dict(base)
+from tests.conftest import load_fixture, make_settings
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +289,7 @@ class TestBulkIndex:
         settings = make_settings()
         client = FsCrawlerClient(settings)
         operations = [
-            {"index": {"_index": "test_docs", "_id": "doc1"}},
+            {"index": {"_index": "fscrawler_docs_test", "_id": "doc1"}},
             {"content": "hello"},
         ]
         result = client.bulk(operations)
@@ -322,7 +302,7 @@ class TestBulkIndex:
         settings = make_settings()
         client = FsCrawlerClient(settings)
         operations = [
-            {"delete": {"_index": "test_docs", "_id": "doc_to_delete"}},
+            {"delete": {"_index": "fscrawler_docs_test", "_id": "doc_to_delete"}},
         ]
         client.bulk(operations)
         call_args = mock_opensearch_client.bulk.call_args
@@ -370,5 +350,55 @@ class TestIndexManagement:
         mock_opensearch_client.delete.return_value = {"result": "deleted"}
         settings = make_settings()
         client = FsCrawlerClient(settings)
-        client.delete_document("test_docs", "doc1")
-        mock_opensearch_client.delete.assert_called_once_with(index="test_docs", id="doc1")
+        client.delete_document("fscrawler_docs_test", "doc1")
+        mock_opensearch_client.delete.assert_called_once_with(index="fscrawler_docs_test", id="doc1")
+
+
+# ---------------------------------------------------------------------------
+# _template_exists error handling
+# ---------------------------------------------------------------------------
+
+
+class TestPushTemplates:
+    def test_push_templates_creates_all_component_and_index_templates(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from fscrawler.client import FsCrawlerClient
+        from tests.conftest import make_settings
+
+        settings = make_settings(fs={"url": "/data"})
+        client = FsCrawlerClient(settings)
+        client.push_templates()
+
+        component_calls = mock_opensearch_client.cluster.put_component_template.call_args_list
+        component_names = {c.kwargs.get("name") or c.args[0] for c in component_calls}
+        assert "fscrawler_mapping_history" in component_names
+        assert "fscrawler_mapping_file" in component_names
+
+        index_calls = mock_opensearch_client.indices.put_index_template.call_args_list
+        index_names = {c.kwargs.get("name") or c.args[0] for c in index_calls}
+        assert "fscrawler_index_template_docs" in index_names
+        assert "fscrawler_index_template_folders" in index_names
+        assert "fscrawler_index_template_history" in index_names
+
+
+# ---------------------------------------------------------------------------
+# _template_exists error handling
+# ---------------------------------------------------------------------------
+
+
+class TestTemplateExistsErrorHandling:
+    def test_auth_error_propagates_from_template_check(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from opensearchpy.exceptions import AuthenticationException
+
+        from fscrawler.client import FsCrawlerClient
+
+        settings = make_settings()
+        client = FsCrawlerClient(settings)
+        mock_opensearch_client.cluster.get_component_template.side_effect = (
+            AuthenticationException(401, "Unauthorized")
+        )
+        with pytest.raises(AuthenticationException):
+            client.push_templates()

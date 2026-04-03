@@ -3,14 +3,13 @@
 
 from __future__ import annotations
 
-import hashlib
+import json
 import logging
-import sys
 import threading
 from typing import TYPE_CHECKING, Any
 
 from fscrawler.client import FsCrawlerClient
-from fscrawler.models import Document
+from fscrawler.models import Document, make_doc_id
 from fscrawler.settings import FsSettings
 
 if TYPE_CHECKING:
@@ -42,9 +41,8 @@ class BulkIndexer:
 
         self._index = es.index
         self._folder_index = es.index_folder
-
-        self._filename_as_id = settings.fs.filename_as_id
-        self._content_hash_as_id = settings.fs.content_hash_as_id
+        self._index_history = es.index_history
+        self._keep_history = settings.fs.keep_history
 
     # ------------------------------------------------------------------
     # Context manager
@@ -62,12 +60,17 @@ class BulkIndexer:
 
     def add(self, doc: Document) -> None:
         """Add a document to the buffer; flush if threshold is reached."""
-        doc_id = doc.file.checksum if self._content_hash_as_id else self._make_id(doc.file.url)
-        action = {"index": {"_index": self._index, "_id": doc_id}}
+        doc_id = self._make_id(doc.path.virtual)
         doc_body = doc.to_dict()
 
-        # Estimate byte size: rough approximation
-        estimated = sys.getsizeof(str(doc_body))
+        # History: check for existing doc and archive if content changed
+        if self._keep_history:
+            self._archive_if_changed(doc_id, doc.file.checksum)
+
+        action = {"index": {"_index": self._index, "_id": doc_id}}
+
+        # Estimate byte size: use actual JSON-serialized size
+        estimated = len(json.dumps(doc_body, default=str).encode("utf-8"))
 
         with self._lock:
             self._buffer.append(action)
@@ -84,7 +87,7 @@ class BulkIndexer:
         """Index a directory entry into the folder index."""
         action = {"index": {"_index": self._folder_index, "_id": folder_doc.path.real}}
         doc_body = folder_doc.to_dict()
-        estimated = sys.getsizeof(str(doc_body))
+        estimated = len(json.dumps(doc_body, default=str).encode("utf-8"))
 
         with self._lock:
             self._buffer.append(action)
@@ -97,11 +100,14 @@ class BulkIndexer:
             ):
                 self._flush_locked()
 
-    def delete(self, file_path: str) -> None:
-        """Queue a delete operation for the given file path."""
-        if self._content_hash_as_id:
-            return  # content-addressed docs are immutable; deletion is a no-op
-        doc_id = self._make_id(file_path)
+    def delete(self, virtual_path: str) -> None:
+        """Queue a delete operation for the given virtual path."""
+        doc_id = self._make_id(virtual_path)
+
+        # History: archive the deleted document
+        if self._keep_history:
+            self._archive_if_changed(doc_id, "deleted")
+
         action: dict[str, Any] = {"delete": {"_index": self._index, "_id": doc_id}}
 
         with self._lock:
@@ -119,10 +125,40 @@ class BulkIndexer:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _make_id(self, file_path: str) -> str:
-        if self._filename_as_id:
-            return file_path
-        return hashlib.sha256(file_path.encode()).hexdigest()
+    def _make_id(self, virtual_path: str) -> str:
+        """Generate a stable document ID from the virtual path."""
+        return make_doc_id(virtual_path)
+
+    def _archive_if_changed(self, doc_id: str, new_checksum: str | None) -> None:
+        """Copy the existing document to the history index if its content has changed."""
+        from datetime import UTC, datetime
+
+        try:
+            existing = self._client.get_document_source(self._index, doc_id)
+        except Exception:
+            logger.debug("Cannot retrieve existing doc %s for history — skipping", doc_id)
+            return
+
+        if existing is None:
+            return
+
+        old_checksum = existing.get("file", {}).get("checksum")
+        if old_checksum == new_checksum:
+            return  # content unchanged — skip
+
+        # Add history metadata
+        existing["superseded_date"] = datetime.now(tz=UTC).isoformat()
+        existing["superseded_by"] = new_checksum or "deleted"
+
+        # History doc ID: {original_id}_{old_checksum} for uniqueness
+        history_id = f"{doc_id}_{old_checksum}" if old_checksum else doc_id
+        history_action = {"index": {"_index": self._index_history, "_id": history_id}}
+        estimated = len(json.dumps(existing, default=str).encode("utf-8"))
+
+        with self._lock:
+            self._buffer.append(history_action)
+            self._buffer.append(existing)
+            self._buffer_bytes += estimated
 
     def _flush_locked(self) -> None:
         """Send buffered operations.  Must be called with self._lock held."""

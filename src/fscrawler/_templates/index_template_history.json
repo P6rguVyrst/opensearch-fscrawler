@@ -1,0 +1,14 @@
+{
+  "index_patterns": ["fscrawler_history_*"],
+  "priority": 500,
+  "composed_of": [
+    "fscrawler_settings_total_fields",
+    "fscrawler_mapping_attributes",
+    "fscrawler_mapping_file",
+    "fscrawler_mapping_path",
+    "fscrawler_mapping_attachment",
+    "fscrawler_mapping_content",
+    "fscrawler_mapping_meta",
+    "fscrawler_mapping_history"
+  ]
+}

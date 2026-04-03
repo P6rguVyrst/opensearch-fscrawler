@@ -11,22 +11,36 @@ from __future__ import annotations
 import fnmatch
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from watchdog.events import FileSystemEventHandler
+
+from fscrawler.models import make_doc_id
+
+if TYPE_CHECKING:
+    from fscrawler.client import FsCrawlerClient
+    from fscrawler.parser import TikaParser
+    from fscrawler.rest_server import CrawlerState
+    from fscrawler.settings import FsSettings
 
 logger = logging.getLogger("fscrawler.watcher")
 
 
 class FsEventHandler(FileSystemEventHandler):
-    """Handle filesystem events by indexing or deleting the affected file."""
+    """Handle filesystem events by indexing or deleting the affected file.
+
+    Note: This handler calls client.index/delete directly (single-document ops),
+    bypassing BulkIndexer. As a result, keep_history archival is not triggered
+    for watchdog events — only the batch crawl path (via BulkIndexer) supports
+    history. This is a known limitation.
+    """
 
     def __init__(
         self,
-        settings: Any,
-        client: Any,
-        parser: Any,
-        crawler_state: Any,
+        settings: FsSettings,
+        client: FsCrawlerClient,
+        parser: TikaParser,
+        crawler_state: CrawlerState,
     ) -> None:
         super().__init__()
         self._settings = settings
@@ -55,6 +69,8 @@ class FsEventHandler(FileSystemEventHandler):
     def on_deleted(self, event: Any) -> None:
         if event.is_directory or self._crawler_state.paused:
             return
+        if not self._settings.fs.remove_deleted:
+            return
         self._delete(event.src_path)
 
     # ------------------------------------------------------------------
@@ -69,11 +85,14 @@ class FsEventHandler(FileSystemEventHandler):
         return not any(fnmatch.fnmatch(name, p) for p in fs.excludes)
 
     def _index(self, path: Path) -> None:
+        if path.is_dir():
+            return
         try:
             doc = self._parser.parse(path)
+            doc_id = make_doc_id(doc.path.virtual)
             self._client.index(
                 doc,
-                doc_id=str(path),
+                doc_id=doc_id,
                 index=self._settings.elasticsearch.index,
             )
             logger.info("Indexed %s", path)
@@ -82,8 +101,14 @@ class FsEventHandler(FileSystemEventHandler):
 
     def _delete(self, path: str) -> None:
         try:
+            root = self._settings.fs.url
+            try:
+                virtual = "/" + str(Path(path).relative_to(root))
+            except ValueError:
+                virtual = "/" + Path(path).name
+            doc_id = make_doc_id(virtual)
             self._client.delete(
-                doc_id=path,
+                doc_id=doc_id,
                 index=self._settings.elasticsearch.index,
             )
             logger.info("Deleted %s from index", path)

@@ -1,0 +1,15 @@
+{
+  "template": {
+    "mappings": {
+      "properties": {
+        "attributes": {
+          "properties": {
+            "owner": { "type": "keyword" },
+            "group": { "type": "keyword" },
+            "permissions": { "type": "integer" }
+          }
+        }
+      }
+    }
+  }
+}

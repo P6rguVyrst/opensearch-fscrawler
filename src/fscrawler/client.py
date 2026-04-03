@@ -132,20 +132,10 @@ class FsCrawlerClient:
             logger.debug("push_templates is disabled — skipping.")
             return
 
-        es = self._settings.elasticsearch
-        index_name = es.index
-        folder_index = es.index_folder
-
-        # Component templates for the docs index
-        for name, body in get_component_templates(index_name, self._settings.name):
+        for name, body in get_component_templates():
             self._put_component_template(name, body, force=force)
 
-        # Component templates for the folder index (re-use same set)
-        for name, body in get_component_templates(folder_index, self._settings.name):
-            self._put_component_template(name, body, force=force)
-
-        # Index templates
-        for name, body in get_index_templates(index_name, folder_index):
+        for name, body in get_index_templates():
             self._put_index_template(name, body, force=force)
 
     def _template_exists(self, name: str, kind: str) -> bool:
@@ -156,8 +146,15 @@ class FsCrawlerClient:
             else:
                 self._client.indices.get_index_template(name=name)
             return True
-        except Exception:
-            return False
+        except Exception as exc:
+            # Only treat "not found" responses as template-missing.
+            # Re-raise auth errors, network errors, etc.
+            if hasattr(exc, "status_code") and exc.status_code == 404:
+                return False
+            # opensearch-py raises generic Exception with "resource_not_found" message
+            if "resource_not_found" in str(exc).lower() or "index_template_missing" in str(exc).lower():
+                return False
+            raise
 
     def _put_component_template(
         self, name: str, body: dict[str, Any], force: bool = False
@@ -212,6 +209,18 @@ class FsCrawlerClient:
         idx = index or self._settings.elasticsearch.index
         body = doc.to_dict() if hasattr(doc, "to_dict") else doc
         return self._client.index(index=idx, id=doc_id, body=body)  # type: ignore[no-any-return]
+
+    def get_document_source(self, index: str, doc_id: str) -> dict[str, Any] | None:
+        """Retrieve a document's _source by ID, returning None if not found."""
+        try:
+            result = self._client.get(index=index, id=doc_id)
+            return result["_source"]  # type: ignore[no-any-return]
+        except Exception as exc:
+            if hasattr(exc, "status_code") and exc.status_code == 404:
+                return None
+            if "not_found" in str(exc).lower():
+                return None
+            raise
 
     def delete(self, doc_id: str, index: str | None = None) -> dict[str, Any]:
         """Delete a document by ID, defaulting the index from settings."""

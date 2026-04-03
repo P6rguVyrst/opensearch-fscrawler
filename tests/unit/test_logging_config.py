@@ -223,11 +223,12 @@ class TestOtlpHttpHandler:
         h = _OtlpHttpHandler("http://collector:4318")
         record = _make_record("msg", logging.INFO)
 
-        with patch("httpx.post") as mock_post:
+        with patch.object(h, "_client") as mock_client:
+            mock_client.post.return_value = MagicMock(status_code=200)
             h.emit(record)
 
-        mock_post.assert_called_once()
-        _, kwargs = mock_post.call_args
+        mock_client.post.assert_called_once()
+        _, kwargs = mock_client.post.call_args
         assert kwargs["headers"] == {"Content-Type": "application/json"}
         body = json.loads(kwargs["content"])
         assert "resourceLogs" in body
@@ -241,10 +242,11 @@ class TestOtlpHttpHandler:
         except TypeError:
             record = _make_record("err", logging.ERROR, exc_info=sys.exc_info())
 
-        with patch("httpx.post") as mock_post:
+        with patch.object(h, "_client") as mock_client:
+            mock_client.post.return_value = MagicMock(status_code=200)
             h.emit(record)
 
-        _, kwargs = mock_post.call_args
+        _, kwargs = mock_client.post.call_args
         body = json.loads(kwargs["content"])
         attrs = body["resourceLogs"][0]["scopeLogs"][0]["logRecords"][0]["attributes"]
         keys = {a["key"] for a in attrs}
@@ -255,8 +257,33 @@ class TestOtlpHttpHandler:
         h = _OtlpHttpHandler("http://dead:9999")
         record = _make_record("msg")
         # handleError writes to stderr — just ensure no exception propagates
-        with patch("httpx.post", side_effect=OSError("refused")):
+        with patch.object(h, "_client") as mock_client:
+            mock_client.post.side_effect = OSError("refused")
             h.emit(record)  # must not raise
+
+    def test_close_closes_client(self) -> None:
+        h = _OtlpHttpHandler("http://collector:4318")
+        with patch.object(h, "_client") as mock_client:
+            h.close()
+        mock_client.close.assert_called_once()
+
+
+class TestOtlpHttpHandlerConnectionReuse:
+    def test_reuses_http_client_across_emits(self) -> None:
+        """Verify the handler uses a persistent httpx.Client, not httpx.post per emit."""
+        handler = _OtlpHttpHandler("http://collector:4318")
+
+        record = logging.LogRecord(
+            name="test", level=logging.INFO, pathname="", lineno=0,
+            msg="test message", args=(), exc_info=None,
+        )
+
+        with patch.object(handler, "_client") as mock_client:
+            mock_client.post.return_value = MagicMock(status_code=200)
+            handler.emit(record)
+            handler.emit(record)
+            # Same client instance should be used both times
+            assert mock_client.post.call_count == 2
 
 
 # ---------------------------------------------------------------------------

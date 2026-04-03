@@ -4,7 +4,7 @@
   "items": [
     {
       "index": {
-        "_index": "test_docs",
+        "_index": "fscrawler_docs_test",
         "_id": "1",
         "result": "created",
         "status": 201

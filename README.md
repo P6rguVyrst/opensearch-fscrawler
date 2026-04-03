@@ -46,11 +46,8 @@ image: ghcr.io/p6rguvyrst/opensearch-fscrawler:latest
 ### With Docker Compose
 
 ```bash
-# Start OpenSearch, Tika, Dashboards, and FSCrawler
-docker compose up -d
-
-# Watch the logs
-docker compose logs -f fscrawler-markdown fscrawler-pdf fscrawler-catchall
+# Start OpenSearch, Tika, Dashboards, and FSCrawler (rebuilds images automatically)
+make up
 ```
 
 ### Locally (development)

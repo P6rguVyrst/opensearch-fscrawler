@@ -19,12 +19,14 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import threading
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from fscrawler import __version__
+from fscrawler.models import make_doc_id
 from fscrawler.client import FsCrawlerClient
 from fscrawler.multipart import parse_multipart
 from fscrawler.parser import TikaParser
@@ -42,8 +44,19 @@ class CrawlerState:
     """Mutable state shared between the background crawler thread and REST endpoints."""
 
     def __init__(self) -> None:
-        self.paused: bool = False
+        self._paused_event = threading.Event()
         self.last_checkpoint: str | None = None
+
+    @property
+    def paused(self) -> bool:
+        return self._paused_event.is_set()
+
+    @paused.setter
+    def paused(self, value: bool) -> None:
+        if value:
+            self._paused_event.set()
+        else:
+            self._paused_event.clear()
 
     def clear_checkpoint(self) -> None:
         self.last_checkpoint = None
@@ -180,8 +193,10 @@ def create_app(
         index: str | None = Query(default=None),
     ) -> dict[str, Any]:
         idx = index or settings.elasticsearch.index
-        client.delete(doc_id=filename, index=idx)
-        logger.info("Deleted document filename=%s index=%s", filename, idx)
+        virtual = f"/{filename}"
+        doc_id = make_doc_id(virtual)
+        client.delete(doc_id=doc_id, index=idx)
+        logger.info("Deleted document filename=%s id=%s index=%s", filename, doc_id, idx)
         return {"ok": True, "filename": filename}
 
     # ------------------------------------------------------------------
@@ -302,7 +317,11 @@ def _handle_upload(
         logger.error("Failed to parse %s: %s", filename, exc)
         raise HTTPException(status_code=500, detail=f"Failed to parse document: {exc}") from exc
 
-    effective_id = doc_id or filename
+    if doc_id:
+        effective_id = doc_id
+    else:
+        virtual = f"/{filename}"
+        effective_id = make_doc_id(virtual)
     idx = index or settings.elasticsearch.index
     doc_url = f"/{idx}/_doc/{effective_id}"
 

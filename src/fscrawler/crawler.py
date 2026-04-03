@@ -74,18 +74,25 @@ class LocalCrawler:
         return current_mtime != self._previous_checkpoint[key]
 
     def get_deleted_files(self) -> list[str]:
-        """Return a list of file paths that existed in the previous checkpoint but are now gone.
+        """Return virtual paths of files deleted since the last checkpoint.
+
+        Virtual paths are relative to the crawl root with a leading slash,
+        e.g. ``/subdir/report.pdf``.
 
         Only meaningful to call after ``scan()`` has been called.
         Returns an empty list when ``remove_deleted`` is False.
         """
         if not self._settings.fs.remove_deleted:
             return []
-        return [
-            path
-            for path in self._previous_checkpoint
-            if path not in self._current_checkpoint
-        ]
+        deleted: list[str] = []
+        for abs_path in self._previous_checkpoint:
+            if abs_path not in self._current_checkpoint:
+                try:
+                    virtual = "/" + str(Path(abs_path).relative_to(self._root))
+                except ValueError:
+                    virtual = "/" + Path(abs_path).name
+                deleted.append(virtual)
+        return deleted
 
     def scan_folders(self) -> Iterator[Path]:
         """Yield all directories under fs.url (including the root itself)."""

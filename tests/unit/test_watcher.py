@@ -8,18 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fscrawler.settings import FsSettings
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def make_settings(**overrides) -> FsSettings:
-    base = {"name": "test", "fs": {"url": "/data"}}
-    base.update(overrides)
-    return FsSettings.from_dict(base)
+from tests.conftest import make_settings
 
 
 def make_handler(settings=None, paused=False):
@@ -31,6 +20,7 @@ def make_handler(settings=None, paused=False):
     parser = MagicMock()
     mock_doc = MagicMock()
     mock_doc.to_dict.return_value = {"content": "text"}
+    mock_doc.path.virtual = "/doc.pdf"
     parser.parse.return_value = mock_doc
 
     state = CrawlerState()
@@ -122,22 +112,87 @@ class TestOnModified:
 
 
 class TestOnDeleted:
+    def _make_delete_handler(self, **kwargs):
+        """Create a handler with remove_deleted=True for delete tests."""
+        settings = make_settings(fs={"url": "/data", "remove_deleted": True})
+        return make_handler(settings=settings, **kwargs)
+
     def test_deletes_from_index(self) -> None:
-        handler, client, _ = make_handler()
+        handler, client, _ = self._make_delete_handler()
         handler.on_deleted(_file_event(None, "/data/old.pdf"))
         client.delete.assert_called_once()
 
     def test_ignores_directory_events(self) -> None:
-        handler, client, _ = make_handler()
+        handler, client, _ = self._make_delete_handler()
         handler.on_deleted(_file_event(None, "/data/subdir", is_directory=True))
         client.delete.assert_not_called()
 
     def test_skipped_when_paused(self) -> None:
-        handler, client, _ = make_handler(paused=True)
+        handler, client, _ = self._make_delete_handler(paused=True)
         handler.on_deleted(_file_event(None, "/data/old.pdf"))
         client.delete.assert_not_called()
 
     def test_delete_error_does_not_raise(self) -> None:
-        handler, client, _ = make_handler()
+        handler, client, _ = self._make_delete_handler()
         client.delete.side_effect = RuntimeError("connection lost")
         handler.on_deleted(_file_event(None, "/data/old.pdf"))
+
+    def test_skipped_when_remove_deleted_false(self) -> None:
+        """When remove_deleted is False, on_deleted must not call client.delete."""
+        settings = make_settings(fs={"url": "/data", "remove_deleted": False})
+        handler, client, _ = make_handler(settings=settings)
+        handler.on_deleted(_file_event(None, "/data/old.pdf"))
+        client.delete.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# New ID strategy (SHA256 of virtual path)
+# ---------------------------------------------------------------------------
+
+
+class TestWatcherNewId:
+    def test_index_uses_virtual_path_based_id(self) -> None:
+        import hashlib
+        from pathlib import Path
+        from unittest.mock import MagicMock
+
+        from fscrawler.watcher import FsEventHandler
+        from tests.conftest import make_document, make_settings
+
+        settings = make_settings(fs={"url": "/data"})
+        mock_client = MagicMock()
+        mock_parser = MagicMock()
+        mock_state = MagicMock()
+        mock_state.paused = False
+
+        doc = make_document("/data/test.txt")
+        mock_parser.parse.return_value = doc
+
+        handler = FsEventHandler(settings, mock_client, mock_parser, mock_state)
+        handler._index(Path("/data/test.txt"))
+
+        # Verify the doc_id passed to client.index is SHA256 of virtual path
+        mock_client.index.assert_called_once()
+        call_kwargs = mock_client.index.call_args[1]
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        assert call_kwargs["doc_id"] == expected_id
+
+    def test_delete_uses_virtual_path(self) -> None:
+        import hashlib
+        from unittest.mock import MagicMock
+
+        from fscrawler.watcher import FsEventHandler
+        from tests.conftest import make_settings
+
+        settings = make_settings(fs={"url": "/data"})
+        mock_client = MagicMock()
+        mock_parser = MagicMock()
+        mock_state = MagicMock()
+        mock_state.paused = False
+
+        handler = FsEventHandler(settings, mock_client, mock_parser, mock_state)
+        handler._delete("/data/test.txt")
+
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        call_kwargs = mock_client.delete.call_args[1]
+        assert call_kwargs["doc_id"] == expected_id

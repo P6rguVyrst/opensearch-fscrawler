@@ -44,10 +44,10 @@ understand are silently ignored.
 | `json_support` | `boolean` | ✅ | ✅ Compatible |
 | `xml_support` | `boolean` | ✅ | ✅ Compatible |
 | `follow_symlinks` | `boolean` | ✅ | ✅ Compatible |
-| `remove_deleted` | `boolean` | ✅ | ✅ Compatible |
+| `remove_deleted` | `boolean` | ✅ Default `true` | ⚠️ **Default changed to `false` in 0.3.0** — deletion is opt-in. Set `remove_deleted: true` to restore Java/0.2.x behavior. |
 | `continue_on_error` | `boolean` | ✅ | ✅ Compatible |
 | `ignore_above` | Byte size string e.g. `512mb` | ✅ Same format | ✅ Compatible |
-| `filename_as_id` | `false` | `true` | ⚠️ **Default differs** — see below |
+| `filename_as_id` | `false` | ❌ **Removed in 0.3.0** — ID is always SHA256 of virtual path | ⚠️ Setting silently ignored if present |
 | `index_content` | `boolean` | ✅ | ✅ Compatible |
 | `add_filesize` | `boolean` | ✅ | ✅ Compatible |
 | `attributes_support` | `boolean` | ✅ | ✅ Compatible |
@@ -55,10 +55,11 @@ understand are silently ignored.
 | `store_source` | `boolean` | ✅ | ✅ Compatible |
 | `indexed_chars` | Percentage/float string | ✅ Parsed as float then int | ✅ Compatible |
 | `raw_metadata` | `boolean` | ✅ | ✅ Compatible |
-| `checksum` | `MD5`, `SHA-256`, etc. | ✅ | ✅ Compatible |
+| `checksum` | `MD5`, `SHA-256`, etc. | ✅ Default changed to `"sha256"` in 0.3.0 | ⚠️ **Default differs** from 0.2.x (`null`) |
 | `index_folders` | `boolean` | ✅ | ✅ Compatible |
 | `tika_url` | ❌ Not available | ✅ URL of the Tika server | Python addition — defaults to `http://localhost:9998` |
-| `content_hash_as_id` | ❌ Not available | ✅ `boolean` | Python addition — see ID mode table below |
+| `keep_history` | ❌ Not available | ✅ `boolean`, default `false` | Python addition — copies old version to history index before update |
+| `content_hash_as_id` | ❌ Not available | ❌ **Removed in 0.3.0** — checksum stored as metadata, not as `_id` | ⚠️ Setting silently ignored if present |
 | `filters` | Regex content filters | ❌ Silently ignored | |
 | `add_as_inner_object` | JSON inner-object mode | ❌ Silently ignored | |
 | `tika_config_path` | Custom Tika XML config | ❌ Silently ignored | |
@@ -82,17 +83,22 @@ against the **filename only** (no directory component).
 **Action required for migration:** strip any directory components from your
 `includes` and `excludes` patterns.
 
-#### Document ID modes
+#### Document ID strategy
 
-Python supports three `_id` strategies, compared to Java's two:
+In version 0.3.0, the document `_id` strategy changed fundamentally:
 
-| Setting | `_id` value | File updated | File deleted |
-|---|---|---|---|
-| `filename_as_id: true` *(Python default)* | raw file path | overwrites same doc | deletes doc |
-| `filename_as_id: false` *(Java default)* | MD5 of file path | overwrites same doc | deletes doc |
-| `content_hash_as_id: true` *(Python only)* | MD5 of file content | new doc created | no-op |
+| Version | `_id` value | Behavior |
+|---------|-------------|----------|
+| 0.2.x `filename_as_id: true` (old default) | raw file path | Tied to absolute path; breaks on remount |
+| 0.2.x `filename_as_id: false` | SHA256 of file path | Stable across remounts |
+| 0.2.x `content_hash_as_id: true` | SHA256 of file content | Creates orphans on edits |
+| **0.3.x (current)** | **SHA256 of virtual path** | **Stable, path-relative, survives edits** |
 
-`content_hash_as_id` takes precedence over `filename_as_id` when both are set.
+The `filename_as_id` and `content_hash_as_id` settings are **removed** in 0.3.0.
+If present in `_settings.yaml`, they are silently ignored.
+
+The `_id` is now always `SHA256(path.virtual)` where `path.virtual` is the
+relative path from the crawl root (e.g., `/reports/Q1.pdf`).
 
 ### `elasticsearch` block
 
@@ -109,6 +115,7 @@ Python supports three `_id` strategies, compared to Java's two:
 | `username` | Deprecated | ✅ Still accepted | ✅ Compatible |
 | `password` | Deprecated, `@JsonIgnore` in Java | ✅ Accepted | ✅ Compatible |
 | `ssl_verification` | `boolean` | ✅ | ✅ Compatible |
+| `index_history` | ❌ Not available | ✅ String, auto-derived as `fscrawler_history_{name}` | Python addition — target index for document version history |
 | `push_templates` | `boolean` | ✅ | ✅ Compatible |
 | `ca_certificate` | Path to CA cert file | ❌ Silently ignored | |
 | `pipeline` | Ingest pipeline name | ❌ Silently ignored | |
@@ -157,10 +164,60 @@ These defaults differ between the two editions.  Explicit values in
 | Setting | Java default | Python default | Risk |
 |---|---|---|---|
 | `fs.url` | `/tmp/es` | `/tmp/es` | ✅ Same |
-| `fs.filename_as_id` | `false` | `true` | ⚠️ **High** — affects document IDs; existing Java indices will accumulate duplicates if migrated |
+| `fs.filename_as_id` | `false` | ❌ Removed | ⚠️ **Breaking** — setting no longer exists; ID is always SHA256 of virtual path |
 | `fs.update_rate` (crawl trigger) | Polls directory on timer | ❌ Removed — always event-driven via watchdog + initial scan on startup | ⚠️ **Breaking** — `update_rate` setting is ignored; `--loop` now uses watchdog instead of sleep-based polling |
 | `elasticsearch.urls` | `https://127.0.0.1:9200` (HTTPS) | `http://localhost:9200` (HTTP) | ⚠️ Medium — connection will fail if ES requires TLS and no URL is set |
 | `rest.url` | `http://127.0.0.1:8080/fscrawler` | `http://127.0.0.1:8080` | ⚠️ Low — REST clients that call `/fscrawler/...` paths will 404 |
+| `fs.remove_deleted` | `true` | `false` | ⚠️ **Changed in 0.3.0** — deletion is now opt-in. Set `remove_deleted: true` to restore previous behavior. |
+| `fs.checksum` | `null` | `"sha256"` | ⚠️ **Changed in 0.3.0** — checksums now always computed and stored |
+| `fs.keep_history` | N/A | `false` | New in 0.3.0 |
+
+---
+
+## Migration from 0.2.x to 0.3.0
+
+### Breaking changes
+
+1. **Document IDs have changed.** All `_id` values are now SHA256 hashes of the
+   virtual path. Existing indices will have old-style IDs. You must reindex.
+
+2. **`filename_as_id` removed.** If set in `_settings.yaml`, it is silently
+   ignored. Remove it to avoid confusion.
+
+3. **`content_hash_as_id` removed.** Same — silently ignored. Remove it.
+
+4. **`checksum` default changed** from `null` to `"sha256"`. All documents now
+   have a `file.checksum` field. This is a minor performance non-issue since
+   file bytes are already read for Tika parsing.
+
+5. **`remove_deleted` default changed** from `true` to `false`. The crawler no
+   longer removes documents from the index when source files are deleted. This
+   supports use cases where the filesystem is a transient staging area and the
+   index is the system of record. To restore the previous behavior, set
+   `remove_deleted: true` in your `_settings.yaml`.
+
+6. **Index naming convention changed.** Default index names changed from
+   `{job}_docs` / `{job}_folder` to `fscrawler_docs_{job}` /
+   `fscrawler_folders_{job}` / `fscrawler_history_{job}`. If you set explicit
+   `index` / `index_folder` values in `_settings.yaml`, those are still
+   respected. Otherwise, existing indices under old names will be orphaned.
+
+7. **Per-index alias component templates removed.** The old system created a
+   `fscrawler_{index}_alias` component template that added a job-name alias to
+   each index. This has been removed — query indices by their full name instead
+   of the alias.
+
+8. **Watcher does not archive history.** When `keep_history: true`, only batch
+   crawls archive superseded documents. Real-time watchdog events overwrite
+   documents without archival.
+
+### Migration steps
+
+1. Delete existing indices and old `fscrawler_*` templates from OpenSearch
+2. Remove `filename_as_id` and `content_hash_as_id` from `_settings.yaml`
+3. If using explicit `index` / `index_folder` values, update them to the new
+   `fscrawler_docs_{job}` convention or keep the old names (they still work)
+4. Run a full crawl to reindex all documents with new IDs
 
 ---
 
@@ -186,7 +243,7 @@ rule: **YAML values take precedence over env vars**.
 | `FSCRAWLER_REST_ENABLE_CORS` | ✅ | ✅ |
 | `FSCRAWLER_FS_URL` | ✅ | ✅ |
 | `FSCRAWLER_FS_TIKA_URL` | ❌ Not available | ✅ Sets `fs.tika_url` — Python addition |
-| `FSCRAWLER_FS_CONTENT_HASH_AS_ID` | ❌ Not available | ✅ Sets `fs.content_hash_as_id` — Python addition |
+| `FSCRAWLER_FS_KEEP_HISTORY` | ❌ Not available | ✅ Sets `fs.keep_history` — Python addition |
 | `FS_JAVA_OPTS` | ✅ JVM options | ❌ Not applicable |
 
 ---

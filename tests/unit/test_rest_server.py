@@ -156,7 +156,17 @@ class TestDocumentUpload:
         headers, body = _multipart_body("report.pdf")
         resp = make_app().post("/_document", content=body, headers=headers).json()
         assert "url" in resp
-        assert "report.pdf" in resp["url"]
+
+    def test_upload_without_id_uses_sha256_of_filename(self) -> None:
+        """When no explicit id is provided, doc_id must be SHA256(/{filename})."""
+        import hashlib
+
+        client = make_mock_client()
+        headers, body = _multipart_body("report.pdf")
+        make_app(client=client).post("/_document", content=body, headers=headers)
+        _, kwargs = client.index.call_args
+        expected_id = hashlib.sha256("/report.pdf".encode()).hexdigest()
+        assert kwargs.get("doc_id") == expected_id
 
     def test_upload_without_file_returns_422(self) -> None:
         resp = make_app().post("/_document")
@@ -201,6 +211,18 @@ class TestDocumentUpload:
         resp = make_app(parser=parser).post("/_document", content=body, headers=headers)
         assert resp.status_code == 500
 
+    def test_upload_simulate_and_debug_does_not_index_but_returns_doc(self) -> None:
+        """simulate=true skips indexing, debug=true still includes doc in response."""
+        client = make_mock_client()
+        parser = make_mock_parser()
+        headers, body = _multipart_body()
+        resp = make_app(client=client, parser=parser).post(
+            "/_document?simulate=true&debug=true", content=body, headers=headers
+        ).json()
+        client.index.assert_not_called()
+        assert "doc" in resp
+        assert resp.get("ok") is True
+
 
 # ---------------------------------------------------------------------------
 # PUT /_document/{id} – upload with explicit path id
@@ -242,6 +264,16 @@ class TestDocumentDeleteByFilename:
 
     def test_delete_response_contains_ok(self) -> None:
         assert make_app().delete("/_document?filename=report.pdf").json().get("ok") is True
+
+    def test_delete_by_filename_uses_sha256_id(self) -> None:
+        """DELETE /_document?filename= must hash /{filename} to match content-addressed IDs."""
+        import hashlib
+
+        client = make_mock_client()
+        make_app(client=client).delete("/_document?filename=report.pdf")
+        _, kwargs = client.delete.call_args
+        expected_id = hashlib.sha256("/report.pdf".encode()).hexdigest()
+        assert kwargs.get("doc_id") == expected_id
 
 
 # ---------------------------------------------------------------------------
@@ -412,6 +444,30 @@ class TestSettingsEndpoint:
         assert "my-secret-key" not in raw
 
 
+class TestCrawlerStateThreadSafety:
+    def test_pause_sets_event(self) -> None:
+        from fscrawler.rest_server import CrawlerState
+        state = CrawlerState()
+        assert not state.paused
+        state.paused = True
+        assert state.paused
+
+    def test_resume_clears_event(self) -> None:
+        from fscrawler.rest_server import CrawlerState
+        state = CrawlerState()
+        state.paused = True
+        state.paused = False
+        assert not state.paused
+
+    def test_paused_is_thread_safe(self) -> None:
+        """Verify paused uses threading.Event under the hood."""
+        import threading
+        from fscrawler.rest_server import CrawlerState
+        state = CrawlerState()
+        assert hasattr(state, '_paused_event')
+        assert isinstance(state._paused_event, threading.Event)
+
+
 class TestCors:
     def test_cors_disabled_no_header_on_get(self) -> None:
         settings = make_settings(rest={"url": "http://127.0.0.1:8080", "enable_cors": False})
@@ -540,8 +596,8 @@ class TestCliRestFlag:
             CliRunner().invoke(main, ["--config_dir", str(tmp_path), "--rest", "test-job"])
 
         called_indices = [c.args[0] for c in mock_client.ensure_index.call_args_list]
-        assert "test-job_docs" in called_indices
-        assert "test-job_folder" in called_indices
+        assert "fscrawler_docs_test-job" in called_indices
+        assert "fscrawler_folders_test-job" in called_indices
 
     def test_rest_mode_starts_background_crawler_thread(self, tmp_path: Path) -> None:
         """--rest must start a daemon thread that runs the background crawler."""

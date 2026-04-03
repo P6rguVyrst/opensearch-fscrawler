@@ -108,7 +108,7 @@ class TestFsSettingsFromDict:
         data = {"name": "myjob", "fs": {"url": "/data"}}
         settings = FsSettings.from_dict(data)
         # Check a representative set of defaults
-        assert settings.fs.remove_deleted is True
+        assert settings.fs.remove_deleted is False
         assert settings.fs.index_content is True
         assert settings.elasticsearch.bulk_size == 100
         assert settings.elasticsearch.push_templates is True
@@ -154,12 +154,12 @@ class TestFsSettingsFromDict:
     def test_index_defaults_to_name_docs(self) -> None:
         data = {"name": "myjob", "fs": {"url": "/data"}}
         settings = FsSettings.from_dict(data)
-        assert settings.elasticsearch.index == "myjob_docs"
+        assert settings.elasticsearch.index == "fscrawler_docs_myjob"
 
     def test_index_folder_defaults_to_name_folder(self) -> None:
         data = {"name": "myjob", "fs": {"url": "/data"}}
         settings = FsSettings.from_dict(data)
-        assert settings.elasticsearch.index_folder == "myjob_folder"
+        assert settings.elasticsearch.index_folder == "fscrawler_folders_myjob"
 
     def test_explicit_index_not_overridden(self) -> None:
         data = {
@@ -309,6 +309,49 @@ class TestEnvOverrides:
         f = self._base_yaml(tmp_path)
         s = FsSettings.from_file(f, environ={"PATH": "/usr/bin", "HOME": "/root"})
         assert s.elasticsearch.nodes == ["http://original:9200"]
+
+
+class TestContentAddressedSettings:
+    def test_checksum_defaults_to_sha256(self) -> None:
+        data = {"name": "myjob", "fs": {"url": "/data"}}
+        settings = FsSettings.from_dict(data)
+        assert settings.fs.checksum == "sha256"
+
+    def test_keep_history_defaults_to_false(self) -> None:
+        data = {"name": "myjob", "fs": {"url": "/data"}}
+        settings = FsSettings.from_dict(data)
+        assert settings.fs.keep_history is False
+
+    def test_keep_history_parsed_from_yaml(self) -> None:
+        data = {"name": "myjob", "fs": {"url": "/data", "keep_history": True}}
+        settings = FsSettings.from_dict(data)
+        assert settings.fs.keep_history is True
+
+    def test_index_history_defaults_to_name_docs_history(self) -> None:
+        data = {"name": "myjob", "fs": {"url": "/data"}}
+        settings = FsSettings.from_dict(data)
+        assert settings.elasticsearch.index_history == "fscrawler_history_myjob"
+
+    def test_index_history_explicit(self) -> None:
+        data = {
+            "name": "myjob",
+            "fs": {"url": "/data"},
+            "elasticsearch": {"index_history": "custom_history"},
+        }
+        settings = FsSettings.from_dict(data)
+        assert settings.elasticsearch.index_history == "custom_history"
+
+    def test_filename_as_id_not_recognized(self) -> None:
+        """Old setting should be silently ignored — no attribute on FsConfig."""
+        data = {"name": "myjob", "fs": {"url": "/data", "filename_as_id": True}}
+        settings = FsSettings.from_dict(data)
+        assert not hasattr(settings.fs, "filename_as_id")
+
+    def test_content_hash_as_id_not_recognized(self) -> None:
+        """Old setting should be silently ignored — no attribute on FsConfig."""
+        data = {"name": "myjob", "fs": {"url": "/data", "content_hash_as_id": True}}
+        settings = FsSettings.from_dict(data)
+        assert not hasattr(settings.fs, "content_hash_as_id")
 
 
 class TestElasticsearchSettings:

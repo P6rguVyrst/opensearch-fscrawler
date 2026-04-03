@@ -10,7 +10,7 @@
 services:
 
   opensearch:
-    image: opensearchproject/opensearch:3.5.0
+    image: opensearchproject/opensearch:3.5.0@sha256:dbb01641baadae5104e18acd888bf05e8fdd9af3567fd30624a76ba3e5a31dec
     container_name: fscrawler-opensearch
     environment:
       - cluster.name=opensearch-cluster
@@ -36,7 +36,7 @@ services:
       retries: 10
 
   opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:3.5.0
+    image: opensearchproject/opensearch-dashboards:3.5.0@sha256:03afc96f2f50a02246294aaa37adffc41270104676eff7c5f377c40ae9dd1ff2
     container_name: fscrawler-dashboards
     depends_on:
       opensearch:
@@ -48,7 +48,7 @@ services:
       - "5601:5601"
 
   tika:
-    image: apache/tika:latest-full
+    image: apache/tika:latest-full@sha256:ecdd37e204308266b1f8e28569f8516ebd5b96d7a4518a71d3904710b20c03b3
     container_name: fscrawler-tika
     ports:
       - "9998:9998"
@@ -73,7 +73,7 @@ services:
       - ./playground/data:/data
     ports:
       - "8080:8080"
-    command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "markdown"]
+    command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "--", "markdown"]
 
   fscrawler-pdf:
     build:
@@ -90,7 +90,7 @@ services:
       - ./playground/data:/data
     ports:
       - "8081:8081"
-    command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "pdf"]
+    command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "--", "pdf"]
 
   fscrawler-catchall:
     build:
@@ -107,7 +107,7 @@ services:
       - ./playground/data:/data
     ports:
       - "8082:8082"
-    command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "catchall"]
+    command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "--", "catchall"]
 
 volumes:
   opensearch-data:

@@ -119,15 +119,12 @@ class TikaParser:
         stat = file_path.stat()
         now = datetime.now(tz=UTC).isoformat()
 
-        checksum: str | None = None
-        if fs.checksum:
-            algo = fs.checksum.lower().replace("-", "")
-            try:
-                h = hashlib.new(algo, raw_bytes)
-                checksum = h.hexdigest()
-            except ValueError:
-                logger.warning("Unknown checksum algorithm: %s", fs.checksum)
-        if fs.content_hash_as_id and checksum is None:
+        algo = fs.checksum.lower().replace("-", "")
+        try:
+            h = hashlib.new(algo, raw_bytes)
+            checksum = h.hexdigest()
+        except ValueError:
+            logger.warning("Unknown checksum algorithm %r, falling back to sha256", fs.checksum)
             checksum = hashlib.sha256(raw_bytes).hexdigest()
 
         created: str | None = None
@@ -223,14 +220,11 @@ class TikaParser:
         name = Path(filename).name
         ext = Path(filename).suffix.lstrip(".").lower()
 
-        checksum: str | None = None
-        if fs.checksum:
-            algo = fs.checksum.lower().replace("-", "")
-            try:
-                checksum = hashlib.new(algo, data).hexdigest()
-            except ValueError:
-                logger.warning("Unknown checksum algorithm: %s", fs.checksum)
-        if fs.content_hash_as_id and checksum is None:
+        algo = fs.checksum.lower().replace("-", "")
+        try:
+            checksum = hashlib.new(algo, data).hexdigest()
+        except ValueError:
+            logger.warning("Unknown checksum algorithm %r, falling back to sha256", fs.checksum)
             checksum = hashlib.sha256(data).hexdigest()
 
         file_info = FileInfo(

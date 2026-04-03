@@ -14,6 +14,7 @@ import os
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -43,8 +44,8 @@ def integration_settings(tmp_path: Path) -> Any:
             },
             "elasticsearch": {
                 "nodes": [{"url": OPENSEARCH_URL}],
-                "index": f"{job_name}_docs",
-                "index_folder": f"{job_name}_folder",
+                "index": f"fscrawler_docs_{job_name}",
+                "index_folder": f"fscrawler_folders_{job_name}",
                 "bulk_size": 10,
                 "push_templates": True,
                 "ssl_verification": False,
@@ -167,8 +168,8 @@ class TestFullCrawl:
                 for fp in crawler.scan():
                     if crawler.is_new_or_modified(fp):
                         indexer.add(parser.parse(fp))
-                for deleted_path in crawler.get_deleted_files():
-                    indexer.delete(deleted_path)
+                for virtual_path in crawler.get_deleted_files():
+                    indexer.delete(virtual_path)
             crawler.save_checkpoint()
 
         # First crawl — index 2 files
@@ -193,6 +194,3 @@ class TestFullCrawl:
         )["hits"]["total"]["value"]
         assert count2 == 1, f"Expected 1 document after deletion, got {count2}"
 
-
-# Type hint needed for the fixture
-from typing import Any  # noqa: E402

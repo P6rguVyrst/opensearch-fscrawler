@@ -155,6 +155,9 @@ def _run_rest(settings_file: Path, job_dir: Path) -> None:
     client.ensure_index(settings.elasticsearch.index)
     client.ensure_index(settings.elasticsearch.index_folder)
 
+    if settings.fs.keep_history:
+        client.ensure_index(settings.elasticsearch.index_history)
+
     crawler_state = CrawlerState()
 
     # Background crawler thread — mirrors Java's dual REST+crawl mode.
@@ -178,7 +181,7 @@ def _run_rest(settings_file: Path, job_dir: Path) -> None:
     # log_config=None prevents uvicorn from calling logging.config.dictConfig()
     # with its own LOGGING_CONFIG, which would install plain-text handlers on
     # the uvicorn.* loggers and break our OTel JSON formatter.
-    uvicorn.run(app, host=host, port=port, log_config=None)
+    uvicorn.run(app, host=host, port=port, log_config=None)  # pragma: no cover
 
 
 def _crawler_loop(
@@ -229,20 +232,18 @@ def _crawl_once(
     """Execute one full crawl pass: scan, index new/modified, delete removed."""
     from fscrawler.crawler import LocalCrawler
     from fscrawler.indexer import BulkIndexer
+    from fscrawler.models import FolderDocument, PathInfo
 
     crawler = LocalCrawler(settings, config_dir=job_dir)
+    root = Path(settings.fs.url)
+
     with BulkIndexer(client, settings) as indexer:
         for folder_path in crawler.scan_folders():
-            from pathlib import Path as _Path
-
-            from fscrawler.models import FolderDocument
-            from fscrawler.models import PathInfo as _PathInfo
-            _root = _Path(settings.fs.url)
-            _rel = folder_path.relative_to(_root)
-            virtual = "/" if str(_rel) == "." else "/" + _rel.as_posix()
-            indexer.add_folder(FolderDocument(path=_PathInfo(
+            rel = folder_path.relative_to(root)
+            virtual = "/" if str(rel) == "." else "/" + rel.as_posix()
+            indexer.add_folder(FolderDocument(path=PathInfo(
                 real=str(folder_path),
-                root=str(_root),
+                root=str(root),
                 virtual=virtual,
             )))
 
@@ -261,8 +262,8 @@ def _crawl_once(
                     else:
                         raise
 
-        for deleted_path in crawler.get_deleted_files():
-            indexer.delete(deleted_path)
+        for virtual_path in crawler.get_deleted_files():
+            indexer.delete(virtual_path)
 
     crawler.save_checkpoint()
 
@@ -283,6 +284,9 @@ def _run(job_name: str, settings_file: Path, job_dir: Path, loop: bool) -> None:
     client.push_templates()
     client.ensure_index(settings.elasticsearch.index)
     client.ensure_index(settings.elasticsearch.index_folder)
+
+    if settings.fs.keep_history:
+        client.ensure_index(settings.elasticsearch.index_history)
 
     parser = TikaParser(settings, tika_url=settings.fs.tika_url)
 
@@ -318,12 +322,13 @@ fs:
   includes: []
   excludes: []
   follow_symlinks: false
-  remove_deleted: true
+  remove_deleted: false
   continue_on_error: false
   index_content: true
   add_filesize: true
   index_folders: true
-  checksum: "MD5"
+  checksum: "sha256"
+  keep_history: false
 elasticsearch:
   nodes:
     - url: "http://localhost:9200"
@@ -341,5 +346,5 @@ rest:
     click.echo("Edit it and then run fscrawler without --setup.")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()
