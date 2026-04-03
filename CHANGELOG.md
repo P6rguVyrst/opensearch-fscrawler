@@ -26,3 +26,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 - Pin Docker base image (`python:3.12-slim`) to digest hash to mitigate CVE-2026-0861
+- Pin `ghcr.io/astral-sh/uv` to digest hash to prevent tag-poisoning attacks (see CVE-2026-33634 / Trivy supply chain incident)
