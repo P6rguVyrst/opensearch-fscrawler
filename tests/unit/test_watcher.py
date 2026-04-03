@@ -132,6 +132,13 @@ class TestOnDeleted:
         client.delete.side_effect = RuntimeError("connection lost")
         handler.on_deleted(_file_event(None, "/data/old.pdf"))
 
+    def test_skipped_when_remove_deleted_false(self) -> None:
+        """When remove_deleted is False, on_deleted must not call client.delete."""
+        settings = make_settings(fs={"url": "/data", "remove_deleted": False})
+        handler, client, _ = make_handler(settings=settings)
+        handler.on_deleted(_file_event(None, "/data/old.pdf"))
+        client.delete.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # New ID strategy (SHA256 of virtual path)

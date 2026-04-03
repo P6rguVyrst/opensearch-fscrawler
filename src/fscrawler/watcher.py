@@ -68,6 +68,8 @@ class FsEventHandler(FileSystemEventHandler):
     def on_deleted(self, event: Any) -> None:
         if event.is_directory or self._crawler_state.paused:
             return
+        if not self._settings.fs.remove_deleted:
+            return
         self._delete(event.src_path)
 
     # ------------------------------------------------------------------

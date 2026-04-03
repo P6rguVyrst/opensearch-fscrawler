@@ -156,7 +156,17 @@ class TestDocumentUpload:
         headers, body = _multipart_body("report.pdf")
         resp = make_app().post("/_document", content=body, headers=headers).json()
         assert "url" in resp
-        assert "report.pdf" in resp["url"]
+
+    def test_upload_without_id_uses_sha256_of_filename(self) -> None:
+        """When no explicit id is provided, doc_id must be SHA256(/{filename})."""
+        import hashlib
+
+        client = make_mock_client()
+        headers, body = _multipart_body("report.pdf")
+        make_app(client=client).post("/_document", content=body, headers=headers)
+        _, kwargs = client.index.call_args
+        expected_id = hashlib.sha256("/report.pdf".encode()).hexdigest()
+        assert kwargs.get("doc_id") == expected_id
 
     def test_upload_without_file_returns_422(self) -> None:
         resp = make_app().post("/_document")
@@ -242,6 +252,16 @@ class TestDocumentDeleteByFilename:
 
     def test_delete_response_contains_ok(self) -> None:
         assert make_app().delete("/_document?filename=report.pdf").json().get("ok") is True
+
+    def test_delete_by_filename_uses_sha256_id(self) -> None:
+        """DELETE /_document?filename= must hash /{filename} to match content-addressed IDs."""
+        import hashlib
+
+        client = make_mock_client()
+        make_app(client=client).delete("/_document?filename=report.pdf")
+        _, kwargs = client.delete.call_args
+        expected_id = hashlib.sha256("/report.pdf".encode()).hexdigest()
+        assert kwargs.get("doc_id") == expected_id
 
 
 # ---------------------------------------------------------------------------

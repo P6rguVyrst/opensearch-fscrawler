@@ -18,6 +18,7 @@ Multipart parsing is done with Python stdlib only (no python-multipart).
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import logging
 import threading
 from typing import Any
@@ -192,8 +193,10 @@ def create_app(
         index: str | None = Query(default=None),
     ) -> dict[str, Any]:
         idx = index or settings.elasticsearch.index
-        client.delete(doc_id=filename, index=idx)
-        logger.info("Deleted document filename=%s index=%s", filename, idx)
+        virtual = f"/{filename}"
+        doc_id = hashlib.sha256(virtual.encode()).hexdigest()
+        client.delete(doc_id=doc_id, index=idx)
+        logger.info("Deleted document filename=%s id=%s index=%s", filename, doc_id, idx)
         return {"ok": True, "filename": filename}
 
     # ------------------------------------------------------------------
@@ -314,7 +317,11 @@ def _handle_upload(
         logger.error("Failed to parse %s: %s", filename, exc)
         raise HTTPException(status_code=500, detail=f"Failed to parse document: {exc}") from exc
 
-    effective_id = doc_id or filename
+    if doc_id:
+        effective_id = doc_id
+    else:
+        virtual = f"/{filename}"
+        effective_id = hashlib.sha256(virtual.encode()).hexdigest()
     idx = index or settings.elasticsearch.index
     doc_url = f"/{idx}/_doc/{effective_id}"
 
