@@ -51,12 +51,11 @@ def _load(name: str) -> dict[str, Any]:
 
 
 def _load_index_template(name: str, index_name: str) -> dict[str, Any]:
-    """Load an index template JSON and substitute the per-index alias placeholder."""
-    raw = (_TEMPLATES_DIR / f"{name}.json").read_text()
-    raw = raw.replace("{{INDEX_ALIAS}}", f"fscrawler_{index_name}_alias")
-    body = json.loads(raw)
+    """Load an index template JSON and wire in the per-index alias and pattern."""
+    body = _load(name)
     body["index_patterns"] = [index_name]
-    return body  # type: ignore[no-any-return]
+    body["composed_of"] = [f"fscrawler_{index_name}_alias"] + body["composed_of"]
+    return body
 
 
 # ---------------------------------------------------------------------------
