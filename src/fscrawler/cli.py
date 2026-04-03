@@ -326,7 +326,7 @@ fs:
   includes: []
   excludes: []
   follow_symlinks: false
-  remove_deleted: true
+  remove_deleted: false
   continue_on_error: false
   index_content: true
   add_filesize: true

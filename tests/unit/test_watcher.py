@@ -112,23 +112,28 @@ class TestOnModified:
 
 
 class TestOnDeleted:
+    def _make_delete_handler(self, **kwargs):
+        """Create a handler with remove_deleted=True for delete tests."""
+        settings = make_settings(fs={"url": "/data", "remove_deleted": True})
+        return make_handler(settings=settings, **kwargs)
+
     def test_deletes_from_index(self) -> None:
-        handler, client, _ = make_handler()
+        handler, client, _ = self._make_delete_handler()
         handler.on_deleted(_file_event(None, "/data/old.pdf"))
         client.delete.assert_called_once()
 
     def test_ignores_directory_events(self) -> None:
-        handler, client, _ = make_handler()
+        handler, client, _ = self._make_delete_handler()
         handler.on_deleted(_file_event(None, "/data/subdir", is_directory=True))
         client.delete.assert_not_called()
 
     def test_skipped_when_paused(self) -> None:
-        handler, client, _ = make_handler(paused=True)
+        handler, client, _ = self._make_delete_handler(paused=True)
         handler.on_deleted(_file_event(None, "/data/old.pdf"))
         client.delete.assert_not_called()
 
     def test_delete_error_does_not_raise(self) -> None:
-        handler, client, _ = make_handler()
+        handler, client, _ = self._make_delete_handler()
         client.delete.side_effect = RuntimeError("connection lost")
         handler.on_deleted(_file_event(None, "/data/old.pdf"))
 

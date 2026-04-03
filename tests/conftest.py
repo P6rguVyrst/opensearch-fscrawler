@@ -91,7 +91,7 @@ def sample_settings_dict() -> dict[str, Any]:
             "json_support": False,
             "xml_support": False,
             "follow_symlinks": False,
-            "remove_deleted": True,
+            "remove_deleted": False,
             "continue_on_error": False,
             "ignore_above": "512mb",
             "index_content": True,

@@ -108,7 +108,7 @@ class TestFsSettingsFromDict:
         data = {"name": "myjob", "fs": {"url": "/data"}}
         settings = FsSettings.from_dict(data)
         # Check a representative set of defaults
-        assert settings.fs.remove_deleted is True
+        assert settings.fs.remove_deleted is False
         assert settings.fs.index_content is True
         assert settings.elasticsearch.bulk_size == 100
         assert settings.elasticsearch.push_templates is True

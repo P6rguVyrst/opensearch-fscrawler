@@ -44,7 +44,7 @@ understand are silently ignored.
 | `json_support` | `boolean` | ✅ | ✅ Compatible |
 | `xml_support` | `boolean` | ✅ | ✅ Compatible |
 | `follow_symlinks` | `boolean` | ✅ | ✅ Compatible |
-| `remove_deleted` | `boolean` | ✅ | ✅ Compatible |
+| `remove_deleted` | `boolean` | ✅ Default `true` | ⚠️ **Default changed to `false` in 0.3.0** — deletion is opt-in. Set `remove_deleted: true` to restore Java/0.2.x behavior. |
 | `continue_on_error` | `boolean` | ✅ | ✅ Compatible |
 | `ignore_above` | Byte size string e.g. `512mb` | ✅ Same format | ✅ Compatible |
 | `filename_as_id` | `false` | ❌ **Removed in 0.3.0** — ID is always SHA256 of virtual path | ⚠️ Setting silently ignored if present |
@@ -168,6 +168,7 @@ These defaults differ between the two editions.  Explicit values in
 | `fs.update_rate` (crawl trigger) | Polls directory on timer | ❌ Removed — always event-driven via watchdog + initial scan on startup | ⚠️ **Breaking** — `update_rate` setting is ignored; `--loop` now uses watchdog instead of sleep-based polling |
 | `elasticsearch.urls` | `https://127.0.0.1:9200` (HTTPS) | `http://localhost:9200` (HTTP) | ⚠️ Medium — connection will fail if ES requires TLS and no URL is set |
 | `rest.url` | `http://127.0.0.1:8080/fscrawler` | `http://127.0.0.1:8080` | ⚠️ Low — REST clients that call `/fscrawler/...` paths will 404 |
+| `fs.remove_deleted` | `true` | `false` | ⚠️ **Changed in 0.3.0** — deletion is now opt-in. Set `remove_deleted: true` to restore previous behavior. |
 | `fs.checksum` | `null` | `"sha256"` | ⚠️ **Changed in 0.3.0** — checksums now always computed and stored |
 | `fs.keep_history` | N/A | `false` | New in 0.3.0 |
 
@@ -188,6 +189,12 @@ These defaults differ between the two editions.  Explicit values in
 4. **`checksum` default changed** from `null` to `"sha256"`. All documents now
    have a `file.checksum` field. This is a minor performance non-issue since
    file bytes are already read for Tika parsing.
+
+5. **`remove_deleted` default changed** from `true` to `false`. The crawler no
+   longer removes documents from the index when source files are deleted. This
+   supports use cases where the filesystem is a transient staging area and the
+   index is the system of record. To restore the previous behavior, set
+   `remove_deleted: true` in your `_settings.yaml`.
 
 ### Migration steps
 

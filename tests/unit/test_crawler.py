@@ -228,7 +228,7 @@ class TestCrawlerCheckpoint:
         file_path = data / "to_delete.txt"
         file_path.write_bytes(b"bye")
 
-        settings = make_settings(tmp_path)
+        settings = make_settings(tmp_path, remove_deleted=True)
         from fscrawler.crawler import LocalCrawler
 
         # First run — checkpoint includes the file

@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 - **Breaking:** Default document ID strategy changed from filename to SHA256 of virtual path
 - **Breaking:** `checksum` setting default changed from `null` to `"sha256"` — checksums are always computed
+- **Breaking:** `remove_deleted` default changed from `true` to `false` — deletion is now opt-in, supporting use cases where the filesystem is a transient staging area and the index is the system of record
 - **Breaking:** Removed `filename_as_id` and `content_hash_as_id` settings
 
 ### Removed

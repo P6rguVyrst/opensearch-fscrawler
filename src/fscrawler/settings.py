@@ -93,7 +93,7 @@ class FsConfig:
     json_support: bool = False
     xml_support: bool = False
     follow_symlinks: bool = False
-    remove_deleted: bool = True
+    remove_deleted: bool = False
     continue_on_error: bool = False
     ignore_above: int | None = None  # bytes; None = no limit
     index_content: bool = True
