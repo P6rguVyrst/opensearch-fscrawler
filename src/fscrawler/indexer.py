@@ -42,9 +42,8 @@ class BulkIndexer:
 
         self._index = es.index
         self._folder_index = es.index_folder
-
-        self._filename_as_id = settings.fs.filename_as_id
-        self._content_hash_as_id = settings.fs.content_hash_as_id
+        self._index_history = es.index_history
+        self._keep_history = settings.fs.keep_history
 
     # ------------------------------------------------------------------
     # Context manager
@@ -62,7 +61,7 @@ class BulkIndexer:
 
     def add(self, doc: Document) -> None:
         """Add a document to the buffer; flush if threshold is reached."""
-        doc_id = doc.file.checksum if self._content_hash_as_id else self._make_id(doc.file.url)
+        doc_id = self._make_id(doc.path.virtual)
         action = {"index": {"_index": self._index, "_id": doc_id}}
         doc_body = doc.to_dict()
 
@@ -97,11 +96,9 @@ class BulkIndexer:
             ):
                 self._flush_locked()
 
-    def delete(self, file_path: str) -> None:
-        """Queue a delete operation for the given file path."""
-        if self._content_hash_as_id:
-            return  # content-addressed docs are immutable; deletion is a no-op
-        doc_id = self._make_id(file_path)
+    def delete(self, virtual_path: str) -> None:
+        """Queue a delete operation for the given virtual path."""
+        doc_id = self._make_id(virtual_path)
         action: dict[str, Any] = {"delete": {"_index": self._index, "_id": doc_id}}
 
         with self._lock:
@@ -119,10 +116,9 @@ class BulkIndexer:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _make_id(self, file_path: str) -> str:
-        if self._filename_as_id:
-            return file_path
-        return hashlib.sha256(file_path.encode()).hexdigest()
+    def _make_id(self, virtual_path: str) -> str:
+        """Generate a stable document ID from the virtual path."""
+        return hashlib.sha256(virtual_path.encode()).hexdigest()
 
     def _flush_locked(self) -> None:
         """Send buffered operations.  Must be called with self._lock held."""

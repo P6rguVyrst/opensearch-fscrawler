@@ -2,14 +2,8 @@
 
 from __future__ import annotations
 
-import time
-from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
-import pytest
-
-from fscrawler.settings import FsSettings
 from tests.conftest import make_document, make_settings
 
 
@@ -79,66 +73,65 @@ class TestIndexerBuffering:
 
 
 class TestIndexerDocumentId:
-    def test_id_is_file_path_when_filename_as_id_true(
-        self, mock_opensearch_client: MagicMock
-    ) -> None:
-        from fscrawler.client import FsCrawlerClient
-        from fscrawler.indexer import BulkIndexer
-
-        settings = FsSettings.from_dict(
-            {
-                "name": "test",
-                "fs": {"url": "/data", "filename_as_id": True},
-                "elasticsearch": {
-                    "nodes": [{"url": "http://localhost:9200"}],
-                    "index": "test_docs",
-                    "bulk_size": 1,
-                },
-            }
-        )
-        client = FsCrawlerClient(settings)
-        indexer = BulkIndexer(client, settings)
-
-        doc = make_document("/data/myfile.txt")
-        indexer.add(doc)
-
-        call_args = mock_opensearch_client.bulk.call_args
-        body = call_args[1].get("body") or call_args[0][0]
-        # The index action should use the file path as ID
-        index_actions = [op for op in body if "index" in op]
-        assert any("myfile.txt" in str(a["index"].get("_id", "")) for a in index_actions)
-
-    def test_id_is_hash_when_filename_as_id_false(
-        self, mock_opensearch_client: MagicMock
-    ) -> None:
+    def test_id_is_sha256_of_virtual_path(self, mock_opensearch_client: MagicMock) -> None:
         import hashlib
 
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
 
-        settings = FsSettings.from_dict(
-            {
-                "name": "test",
-                "fs": {"url": "/data", "filename_as_id": False},
-                "elasticsearch": {
-                    "nodes": [{"url": "http://localhost:9200"}],
-                    "index": "test_docs",
-                    "bulk_size": 1,
-                },
-            }
-        )
+        settings = make_settings(elasticsearch={"bulk_size": 1})
         client = FsCrawlerClient(settings)
         indexer = BulkIndexer(client, settings)
 
-        path = "/data/myfile.txt"
-        doc = make_document(path)
+        doc = make_document("/data/myfile.txt")
+        # make_document sets virtual to "/myfile.txt"
         indexer.add(doc)
 
         call_args = mock_opensearch_client.bulk.call_args
         body = call_args[1].get("body") or call_args[0][0]
         index_actions = [op for op in body if "index" in op]
-        expected_id = hashlib.sha256(path.encode()).hexdigest()
-        assert any(a["index"].get("_id") == expected_id for a in index_actions)
+        expected_id = hashlib.sha256("/myfile.txt".encode()).hexdigest()
+        assert index_actions[0]["index"]["_id"] == expected_id
+
+    def test_same_virtual_path_same_id(self, mock_opensearch_client: MagicMock) -> None:
+        import hashlib
+
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 10})
+        client = FsCrawlerClient(settings)
+        indexer = BulkIndexer(client, settings)
+
+        doc1 = make_document("/data/myfile.txt", content="version 1")
+        doc2 = make_document("/data/myfile.txt", content="version 2")
+        indexer.add(doc1)
+        indexer.add(doc2)
+        indexer.flush()
+
+        body = mock_opensearch_client.bulk.call_args[1]["body"]
+        ids = [body[i]["index"]["_id"] for i in range(0, len(body), 2)]
+        assert ids[0] == ids[1]  # same virtual path → same ID
+
+    def test_different_virtual_paths_different_ids(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 10})
+        client = FsCrawlerClient(settings)
+        indexer = BulkIndexer(client, settings)
+
+        doc1 = make_document("/data/a.txt")
+        doc2 = make_document("/data/b.txt")
+        indexer.add(doc1)
+        indexer.add(doc2)
+        indexer.flush()
+
+        body = mock_opensearch_client.bulk.call_args[1]["body"]
+        ids = [body[i]["index"]["_id"] for i in range(0, len(body), 2)]
+        assert ids[0] != ids[1]
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +148,7 @@ class TestIndexerDelete:
         client = FsCrawlerClient(settings)
         indexer = BulkIndexer(client, settings)
 
-        indexer.delete("/data/gone.txt")
+        indexer.delete("/gone.txt")  # virtual path
 
         call_args = mock_opensearch_client.bulk.call_args
         body = call_args[1].get("body") or call_args[0][0]
@@ -170,7 +163,7 @@ class TestIndexerDelete:
         client = FsCrawlerClient(settings)
         indexer = BulkIndexer(client, settings)
 
-        indexer.delete("/data/gone.txt")
+        indexer.delete("/gone.txt")  # virtual path
 
         call_args = mock_opensearch_client.bulk.call_args
         body = call_args[1].get("body") or call_args[0][0]
@@ -184,57 +177,30 @@ class TestIndexerDelete:
 
 
 # ---------------------------------------------------------------------------
-# content_hash_as_id
+# Delete with new ID strategy
 # ---------------------------------------------------------------------------
 
 
-class TestContentHashAsId:
-    def _make_settings(self, **fs_overrides: Any) -> FsSettings:
-        fs: dict[str, Any] = {"url": "/data", "content_hash_as_id": True}
-        fs.update(fs_overrides)
-        return FsSettings.from_dict({"name": "test", "fs": fs, "elasticsearch": {"nodes": [{"url": "http://localhost:9200"}], "index": "test_docs", "bulk_size": 100}})
+class TestIndexerDeleteNewId:
+    def test_delete_uses_sha256_of_virtual_path(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        import hashlib
 
-    def test_uses_checksum_as_doc_id(self, mock_opensearch_client: MagicMock) -> None:
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
 
-        settings = self._make_settings()
-        doc = make_document("/data/file.txt")
-        doc.file.checksum = "abc123"
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        indexer = BulkIndexer(client, settings)
 
-        with BulkIndexer(client := FsCrawlerClient(settings), settings) as indexer:
-            indexer.add(doc)
+        indexer.delete("/gone.txt")  # virtual path
 
-        action = mock_opensearch_client.bulk.call_args[1]["body"][0]
-        assert action["index"]["_id"] == "abc123"
-
-    def test_different_content_different_id(self, mock_opensearch_client: MagicMock) -> None:
-        from fscrawler.client import FsCrawlerClient
-        from fscrawler.indexer import BulkIndexer
-
-        settings = self._make_settings()
-        doc_v1 = make_document("/data/file.txt")
-        doc_v1.file.checksum = "hash_v1"
-        doc_v2 = make_document("/data/file.txt")
-        doc_v2.file.checksum = "hash_v2"
-
-        with BulkIndexer(client := FsCrawlerClient(settings), settings) as indexer:
-            indexer.add(doc_v1)
-            indexer.add(doc_v2)
-
-        body = mock_opensearch_client.bulk.call_args[1]["body"]
-        ids = [body[i]["index"]["_id"] for i in range(0, len(body), 2)]
-        assert ids == ["hash_v1", "hash_v2"]
-
-    def test_delete_is_noop(self, mock_opensearch_client: MagicMock) -> None:
-        from fscrawler.client import FsCrawlerClient
-        from fscrawler.indexer import BulkIndexer
-
-        settings = self._make_settings()
-        with BulkIndexer(client := FsCrawlerClient(settings), settings) as indexer:
-            indexer.delete("/data/file.txt")
-
-        mock_opensearch_client.bulk.assert_not_called()
+        call_args = mock_opensearch_client.bulk.call_args
+        body = call_args[1].get("body") or call_args[0][0]
+        delete_ops = [op for op in body if "delete" in op]
+        expected_id = hashlib.sha256("/gone.txt".encode()).hexdigest()
+        assert delete_ops[0]["delete"]["_id"] == expected_id
 
 
 class TestByteEstimation:
