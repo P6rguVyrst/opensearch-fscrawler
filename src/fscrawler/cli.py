@@ -229,20 +229,18 @@ def _crawl_once(
     """Execute one full crawl pass: scan, index new/modified, delete removed."""
     from fscrawler.crawler import LocalCrawler
     from fscrawler.indexer import BulkIndexer
+    from fscrawler.models import FolderDocument, PathInfo
 
     crawler = LocalCrawler(settings, config_dir=job_dir)
+    root = Path(settings.fs.url)
+
     with BulkIndexer(client, settings) as indexer:
         for folder_path in crawler.scan_folders():
-            from pathlib import Path as _Path
-
-            from fscrawler.models import FolderDocument
-            from fscrawler.models import PathInfo as _PathInfo
-            _root = _Path(settings.fs.url)
-            _rel = folder_path.relative_to(_root)
-            virtual = "/" if str(_rel) == "." else "/" + _rel.as_posix()
-            indexer.add_folder(FolderDocument(path=_PathInfo(
+            rel = folder_path.relative_to(root)
+            virtual = "/" if str(rel) == "." else "/" + rel.as_posix()
+            indexer.add_folder(FolderDocument(path=PathInfo(
                 real=str(folder_path),
-                root=str(_root),
+                root=str(root),
                 virtual=virtual,
             )))
 
