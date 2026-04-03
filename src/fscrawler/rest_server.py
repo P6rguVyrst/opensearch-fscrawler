@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import threading
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -42,8 +43,19 @@ class CrawlerState:
     """Mutable state shared between the background crawler thread and REST endpoints."""
 
     def __init__(self) -> None:
-        self.paused: bool = False
+        self._paused_event = threading.Event()
         self.last_checkpoint: str | None = None
+
+    @property
+    def paused(self) -> bool:
+        return self._paused_event.is_set()
+
+    @paused.setter
+    def paused(self, value: bool) -> None:
+        if value:
+            self._paused_event.set()
+        else:
+            self._paused_event.clear()
 
     def clear_checkpoint(self) -> None:
         self.last_checkpoint = None

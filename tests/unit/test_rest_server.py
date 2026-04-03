@@ -412,6 +412,30 @@ class TestSettingsEndpoint:
         assert "my-secret-key" not in raw
 
 
+class TestCrawlerStateThreadSafety:
+    def test_pause_sets_event(self) -> None:
+        from fscrawler.rest_server import CrawlerState
+        state = CrawlerState()
+        assert not state.paused
+        state.paused = True
+        assert state.paused
+
+    def test_resume_clears_event(self) -> None:
+        from fscrawler.rest_server import CrawlerState
+        state = CrawlerState()
+        state.paused = True
+        state.paused = False
+        assert not state.paused
+
+    def test_paused_is_thread_safe(self) -> None:
+        """Verify paused uses threading.Event under the hood."""
+        import threading
+        from fscrawler.rest_server import CrawlerState
+        state = CrawlerState()
+        assert hasattr(state, '_paused_event')
+        assert isinstance(state._paused_event, threading.Event)
+
+
 class TestCors:
     def test_cors_disabled_no_header_on_get(self) -> None:
         settings = make_settings(rest={"url": "http://127.0.0.1:8080", "enable_cors": False})
