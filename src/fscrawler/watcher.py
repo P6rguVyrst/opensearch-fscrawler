@@ -9,12 +9,13 @@ for the next polling cycle.
 from __future__ import annotations
 
 import fnmatch
-import hashlib
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from watchdog.events import FileSystemEventHandler
+
+from fscrawler.models import make_doc_id
 
 if TYPE_CHECKING:
     from fscrawler.client import FsCrawlerClient
@@ -88,7 +89,7 @@ class FsEventHandler(FileSystemEventHandler):
             return
         try:
             doc = self._parser.parse(path)
-            doc_id = hashlib.sha256(doc.path.virtual.encode()).hexdigest()
+            doc_id = make_doc_id(doc.path.virtual)
             self._client.index(
                 doc,
                 doc_id=doc_id,
@@ -105,7 +106,7 @@ class FsEventHandler(FileSystemEventHandler):
                 virtual = "/" + str(Path(path).relative_to(root))
             except ValueError:
                 virtual = "/" + Path(path).name
-            doc_id = hashlib.sha256(virtual.encode()).hexdigest()
+            doc_id = make_doc_id(virtual)
             self._client.delete(
                 doc_id=doc_id,
                 index=self._settings.elasticsearch.index,

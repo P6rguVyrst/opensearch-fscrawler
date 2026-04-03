@@ -3,14 +3,13 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import threading
 from typing import TYPE_CHECKING, Any
 
 from fscrawler.client import FsCrawlerClient
-from fscrawler.models import Document
+from fscrawler.models import Document, make_doc_id
 from fscrawler.settings import FsSettings
 
 if TYPE_CHECKING:
@@ -128,7 +127,7 @@ class BulkIndexer:
 
     def _make_id(self, virtual_path: str) -> str:
         """Generate a stable document ID from the virtual path."""
-        return hashlib.sha256(virtual_path.encode()).hexdigest()
+        return make_doc_id(virtual_path)
 
     def _archive_if_changed(self, doc_id: str, new_checksum: str | None) -> None:
         """Copy the existing document to the history index if its content has changed."""

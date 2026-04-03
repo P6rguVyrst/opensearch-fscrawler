@@ -18,7 +18,6 @@ Multipart parsing is done with Python stdlib only (no python-multipart).
 from __future__ import annotations
 
 import dataclasses
-import hashlib
 import logging
 import threading
 from typing import Any
@@ -27,6 +26,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from fscrawler import __version__
+from fscrawler.models import make_doc_id
 from fscrawler.client import FsCrawlerClient
 from fscrawler.multipart import parse_multipart
 from fscrawler.parser import TikaParser
@@ -194,7 +194,7 @@ def create_app(
     ) -> dict[str, Any]:
         idx = index or settings.elasticsearch.index
         virtual = f"/{filename}"
-        doc_id = hashlib.sha256(virtual.encode()).hexdigest()
+        doc_id = make_doc_id(virtual)
         client.delete(doc_id=doc_id, index=idx)
         logger.info("Deleted document filename=%s id=%s index=%s", filename, doc_id, idx)
         return {"ok": True, "filename": filename}
@@ -321,7 +321,7 @@ def _handle_upload(
         effective_id = doc_id
     else:
         virtual = f"/{filename}"
-        effective_id = hashlib.sha256(virtual.encode()).hexdigest()
+        effective_id = make_doc_id(virtual)
     idx = index or settings.elasticsearch.index
     doc_url = f"/{idx}/_doc/{effective_id}"
 
