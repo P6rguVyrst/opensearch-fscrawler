@@ -50,6 +50,11 @@ def make_settings(**overrides: Any) -> Any:
 
 def make_document(path: str = "/data/test.txt", content: str = "hello") -> Document:
     """Create a minimal Document for testing."""
+    root = "/data"
+    try:
+        virtual = "/" + str(Path(path).relative_to(root))
+    except ValueError:
+        virtual = "/" + Path(path).name
     return Document(
         content=content,
         file=FileInfo(
@@ -64,7 +69,7 @@ def make_document(path: str = "/data/test.txt", content: str = "hello") -> Docum
             checksum=None,
             url=path,
         ),
-        path=PathInfo(real=path, root="/data", virtual="/" + Path(path).name),
+        path=PathInfo(real=path, root=root, virtual=virtual),
         meta=Meta(),
     )
 
