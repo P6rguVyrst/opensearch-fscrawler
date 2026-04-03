@@ -27,6 +27,10 @@ def mapping_file_template() -> dict[str, Any]:
         "template": {
             "mappings": {
                 "properties": {
+                    "@timestamp": {
+                        "type": "date",
+                        "format": "date_optional_time",
+                    },
                     "file": {
                         "properties": {
                             "content_type": {"type": "keyword"},

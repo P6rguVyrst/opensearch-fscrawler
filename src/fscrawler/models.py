@@ -97,6 +97,7 @@ class Document:
         file_dict["indexed_chars"] = len(self.content) if self.content is not None else 0
 
         result: dict[str, Any] = {
+            "@timestamp": self.file.indexing_date,
             "file": file_dict,
             "path": asdict(self.path),
         }
