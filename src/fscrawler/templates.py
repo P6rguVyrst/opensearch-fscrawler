@@ -2,13 +2,69 @@
 """Elasticsearch / OpenSearch index and component template definitions.
 
 Templates are compatible with both Elasticsearch 7.x/8.x/9.x and OpenSearch 1.x/2.x/3.x.
-Component template names follow the pattern: fscrawler_{index}_{purpose}
-Index template names follow the pattern: fscrawler_{index}_docs / fscrawler_{index}_folders
+
+Shared component templates (created once per cluster):
+  fscrawler_settings_total_fields
+  fscrawler_mapping_file
+  fscrawler_mapping_path
+  fscrawler_mapping_meta
+  fscrawler_mapping_content
+  fscrawler_mapping_attachment
+  fscrawler_mapping_attributes
+  fscrawler_mapping_history
+
+Per-index component templates:
+  fscrawler_{index}_alias
+
+Index templates compose the shared components with a per-index alias:
+  fscrawler_{index}_docs / fscrawler_{index}_folders / fscrawler_{index}_history
 """
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
+
+_TEMPLATES_DIR = Path(__file__).parent / "_templates"
+
+# Shared component template names (no per-index prefix)
+SHARED_COMPONENTS = [
+    "settings_total_fields",
+    "mapping_file",
+    "mapping_path",
+    "mapping_meta",
+    "mapping_content",
+    "mapping_attachment",
+    "mapping_attributes",
+    "mapping_history",
+]
+
+
+def _load(name: str) -> dict[str, Any]:
+    """Load a JSON template file from the _templates directory."""
+    with open(_TEMPLATES_DIR / f"{name}.json") as f:
+        return json.load(f)  # type: ignore[no-any-return]
+
+
+# ---------------------------------------------------------------------------
+# Shared component templates (one per cluster, not per index)
+# ---------------------------------------------------------------------------
+
+
+def get_shared_component_templates() -> list[tuple[str, dict[str, Any]]]:
+    """Return (name, body) tuples for all shared component templates."""
+    return [(f"fscrawler_{name}", _load(name)) for name in SHARED_COMPONENTS]
+
+
+def mapping_history_template() -> dict[str, Any]:
+    """Return the history mapping component template body."""
+    return _load("mapping_history")
+
+
+# ---------------------------------------------------------------------------
+# Per-index alias template
+# ---------------------------------------------------------------------------
 
 
 def alias_template(alias_name: str) -> dict[str, Any]:
@@ -16,297 +72,68 @@ def alias_template(alias_name: str) -> dict[str, Any]:
     return {"template": {"aliases": {alias_name: {}}}}
 
 
-def settings_total_fields_template() -> dict[str, Any]:
-    """Component template that raises the total fields mapping limit."""
-    return {"template": {"settings": {"index.mapping.total_fields.limit": 2000}}}
-
-
-def mapping_file_template() -> dict[str, Any]:
-    """Component template with file metadata field mappings."""
-    return {
-        "template": {
-            "mappings": {
-                "properties": {
-                    "@timestamp": {
-                        "type": "date",
-                        "format": "date_optional_time",
-                    },
-                    "file": {
-                        "properties": {
-                            "content_type": {"type": "keyword"},
-                            "filename": {"type": "keyword", "store": True},
-                            "extension": {"type": "keyword"},
-                            "filesize": {"type": "long"},
-                            "indexed_chars": {"type": "long"},
-                            "indexing_date": {
-                                "type": "date",
-                                "format": "date_optional_time",
-                            },
-                            "created": {
-                                "type": "date",
-                                "format": "date_optional_time",
-                            },
-                            "last_modified": {
-                                "type": "date",
-                                "format": "date_optional_time",
-                            },
-                            "last_accessed": {
-                                "type": "date",
-                                "format": "date_optional_time",
-                            },
-                            "checksum": {"type": "keyword"},
-                            "url": {"type": "keyword", "index": False},
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-
-def mapping_path_template() -> dict[str, Any]:
-    """Component template with path field mappings including path_hierarchy analyzer."""
-    return {
-        "template": {
-            "settings": {
-                "analysis": {
-                    "analyzer": {
-                        "fscrawler_path": {
-                            "tokenizer": "fscrawler_path",
-                            "char_filter": ["leading_slash", "windows_separator"],
-                        }
-                    },
-                    "char_filter": {
-                        "windows_separator": {
-                            "type": "mapping",
-                            "mappings": ["\\\\ => /"],
-                        },
-                        "leading_slash": {
-                            "type": "pattern_replace",
-                            "pattern": "^/",
-                            "replacement": "",
-                        },
-                    },
-                    "tokenizer": {
-                        "fscrawler_path": {"type": "path_hierarchy"}
-                    },
-                }
-            },
-            "mappings": {
-                "properties": {
-                    "path": {
-                        "properties": {
-                            "real": {
-                                "type": "keyword",
-                                "fields": {
-                                    "tree": {
-                                        "type": "text",
-                                        "analyzer": "fscrawler_path",
-                                        "fielddata": True,
-                                    },
-                                    "fulltext": {"type": "text"},
-                                },
-                            },
-                            "root": {"type": "keyword"},
-                            "virtual": {
-                                "type": "keyword",
-                                "fields": {
-                                    "tree": {
-                                        "type": "text",
-                                        "analyzer": "fscrawler_path",
-                                        "fielddata": True,
-                                    },
-                                    "fulltext": {"type": "text"},
-                                },
-                            },
-                        }
-                    }
-                }
-            },
-        }
-    }
-
-
-def mapping_meta_template() -> dict[str, Any]:
-    """Component template with document metadata field mappings."""
-    return {
-        "template": {
-            "mappings": {
-                "properties": {
-                    "meta": {
-                        "properties": {
-                            "author": {"type": "text"},
-                            "date": {"type": "date", "format": "date_optional_time"},
-                            "keywords": {"type": "text"},
-                            "title": {"type": "text"},
-                            "language": {"type": "keyword"},
-                            "format": {"type": "text"},
-                            "identifier": {"type": "text"},
-                            "contributor": {"type": "text"},
-                            "coverage": {"type": "text"},
-                            "modifier": {"type": "text"},
-                            "creator_tool": {"type": "keyword"},
-                            "publisher": {"type": "text"},
-                            "relation": {"type": "text"},
-                            "rights": {"type": "text"},
-                            "source": {"type": "text"},
-                            "type": {"type": "text"},
-                            "description": {"type": "text"},
-                            "created": {"type": "date", "format": "date_optional_time"},
-                            "print_date": {"type": "date", "format": "date_optional_time"},
-                            "metadata_date": {"type": "date", "format": "date_optional_time"},
-                            "latitude": {"type": "keyword"},
-                            "longitude": {"type": "keyword"},
-                            "altitude": {"type": "keyword"},
-                            "rating": {"type": "short"},
-                            "comments": {"type": "text"},
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-
-def mapping_content_template() -> dict[str, Any]:
-    """Component template for the full-text content field."""
-    return {"template": {"mappings": {"properties": {"content": {"type": "text"}}}}}
-
-
-def mapping_attachment_template() -> dict[str, Any]:
-    """Component template for binary attachment storage."""
-    return {
-        "template": {
-            "mappings": {
-                "properties": {
-                    "attachment": {"type": "binary", "doc_values": False}
-                }
-            }
-        }
-    }
-
-
-def mapping_attributes_template() -> dict[str, Any]:
-    """Component template for file attributes / ACL fields."""
-    return {
-        "template": {
-            "mappings": {
-                "properties": {
-                    "attributes": {
-                        "properties": {
-                            "owner": {"type": "keyword"},
-                            "group": {"type": "keyword"},
-                            "permissions": {"type": "integer"},
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-
-def mapping_history_template() -> dict[str, Any]:
-    """Component template for document history (superseded version tracking)."""
-    return {
-        "template": {
-            "mappings": {
-                "properties": {
-                    "superseded_date": {
-                        "type": "date",
-                        "format": "date_optional_time",
-                    },
-                    "superseded_by": {"type": "keyword"},
-                }
-            }
-        }
-    }
-
-
 # ---------------------------------------------------------------------------
-# Index template builders
+# Index templates
 # ---------------------------------------------------------------------------
 
+_DOCS_COMPONENTS = [
+    "fscrawler_settings_total_fields",
+    "fscrawler_mapping_attributes",
+    "fscrawler_mapping_file",
+    "fscrawler_mapping_path",
+    "fscrawler_mapping_attachment",
+    "fscrawler_mapping_content",
+    "fscrawler_mapping_meta",
+]
 
-def index_template_docs(index_name: str) -> dict[str, Any]:
-    """Composable index template for the documents index."""
-    return {
-        "index_patterns": [index_name],
-        "priority": 500,
-        "composed_of": [
-            f"fscrawler_{index_name}_alias",
-            f"fscrawler_{index_name}_settings_total_fields",
-            f"fscrawler_{index_name}_mapping_attributes",
-            f"fscrawler_{index_name}_mapping_file",
-            f"fscrawler_{index_name}_mapping_path",
-            f"fscrawler_{index_name}_mapping_attachment",
-            f"fscrawler_{index_name}_mapping_content",
-            f"fscrawler_{index_name}_mapping_meta",
-        ],
-    }
+_FOLDER_COMPONENTS = [
+    "fscrawler_settings_total_fields",
+    "fscrawler_mapping_path",
+]
 
-
-def index_template_folders(index_name: str) -> dict[str, Any]:
-    """Composable index template for the folder index."""
-    return {
-        "index_patterns": [index_name],
-        "priority": 500,
-        "composed_of": [
-            f"fscrawler_{index_name}_alias",
-            f"fscrawler_{index_name}_settings_total_fields",
-            f"fscrawler_{index_name}_mapping_path",
-        ],
-    }
-
-
-def index_template_history(index_name: str) -> dict[str, Any]:
-    """Composable index template for the document history index."""
-    return {
-        "index_patterns": [index_name],
-        "priority": 500,
-        "composed_of": [
-            f"fscrawler_{index_name}_alias",
-            f"fscrawler_{index_name}_settings_total_fields",
-            f"fscrawler_{index_name}_mapping_attributes",
-            f"fscrawler_{index_name}_mapping_file",
-            f"fscrawler_{index_name}_mapping_path",
-            f"fscrawler_{index_name}_mapping_attachment",
-            f"fscrawler_{index_name}_mapping_content",
-            f"fscrawler_{index_name}_mapping_meta",
-            f"fscrawler_{index_name}_mapping_history",
-        ],
-    }
-
-
-# ---------------------------------------------------------------------------
-# Aggregate: all templates for a given job
-# ---------------------------------------------------------------------------
-
-
-def get_component_templates(index_name: str, job_name: str) -> list[tuple[str, dict[str, Any]]]:
-    """Return a list of (template_name, body) tuples for all component templates."""
-    return [
-        (f"fscrawler_{index_name}_alias", alias_template(job_name)),
-        (f"fscrawler_{index_name}_settings_total_fields", settings_total_fields_template()),
-        (f"fscrawler_{index_name}_mapping_file", mapping_file_template()),
-        (f"fscrawler_{index_name}_mapping_path", mapping_path_template()),
-        (f"fscrawler_{index_name}_mapping_meta", mapping_meta_template()),
-        (f"fscrawler_{index_name}_mapping_content", mapping_content_template()),
-        (f"fscrawler_{index_name}_mapping_attachment", mapping_attachment_template()),
-        (f"fscrawler_{index_name}_mapping_attributes", mapping_attributes_template()),
-        (f"fscrawler_{index_name}_mapping_history", mapping_history_template()),
-    ]
+_HISTORY_COMPONENTS = _DOCS_COMPONENTS + [
+    "fscrawler_mapping_history",
+]
 
 
 def get_index_templates(
-    docs_index: str, folder_index: str, history_index: str = ""
+    docs_index: str,
+    folder_index: str,
+    job_name: str,
+    history_index: str = "",
 ) -> list[tuple[str, dict[str, Any]]]:
-    """Return a list of (template_name, body) tuples for the index templates."""
-    templates = [
-        (f"fscrawler_{docs_index}_docs", index_template_docs(docs_index)),
-        (f"fscrawler_{folder_index}_folders", index_template_folders(folder_index)),
-    ]
+    """Return (name, body) tuples for all index templates and their per-index alias components."""
+    result: list[tuple[str, dict[str, Any]]] = []
+
+    # Per-index alias component templates
+    for index_name in [docs_index, folder_index] + ([history_index] if history_index else []):
+        result.append((f"fscrawler_{index_name}_alias", alias_template(job_name)))
+
+    # Index templates
+    result.append((
+        f"fscrawler_{docs_index}_docs",
+        {
+            "index_patterns": [docs_index],
+            "priority": 500,
+            "composed_of": [f"fscrawler_{docs_index}_alias"] + _DOCS_COMPONENTS,
+        },
+    ))
+    result.append((
+        f"fscrawler_{folder_index}_folders",
+        {
+            "index_patterns": [folder_index],
+            "priority": 500,
+            "composed_of": [f"fscrawler_{folder_index}_alias"] + _FOLDER_COMPONENTS,
+        },
+    ))
     if history_index:
-        templates.append(
-            (f"fscrawler_{history_index}_docs_history", index_template_history(history_index))
-        )
-    return templates
+        result.append((
+            f"fscrawler_{history_index}_history",
+            {
+                "index_patterns": [history_index],
+                "priority": 500,
+                "composed_of": [f"fscrawler_{history_index}_alias"] + _HISTORY_COMPONENTS,
+            },
+        ))
+
+    return result

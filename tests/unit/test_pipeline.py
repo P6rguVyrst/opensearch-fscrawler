@@ -23,8 +23,8 @@ import pytest
 
 from fscrawler.settings import FsSettings
 from fscrawler.templates import (
-    get_component_templates,
     get_index_templates,
+    get_shared_component_templates,
     mapping_history_template,
 )
 
@@ -226,7 +226,11 @@ class TestHistoryTemplate:
         assert "superseded_by" in props
         assert props["superseded_by"]["type"] == "keyword"
 
+    def test_shared_components_include_history(self) -> None:
+        names = [name for name, _ in get_shared_component_templates()]
+        assert "fscrawler_mapping_history" in names
+
     def test_get_index_templates_includes_history(self) -> None:
-        templates = get_index_templates("test_docs", "test_folder", "test_docs_history")
+        templates = get_index_templates("test_docs", "test_folder", "test", history_index="test_docs_history")
         names = [name for name, _ in templates]
-        assert "fscrawler_test_docs_history_docs_history" in names
+        assert "fscrawler_test_docs_history_history" in names

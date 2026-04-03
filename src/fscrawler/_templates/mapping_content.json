@@ -1,0 +1,9 @@
+{
+  "template": {
+    "mappings": {
+      "properties": {
+        "content": { "type": "text" }
+      }
+    }
+  }
+}

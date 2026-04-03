@@ -13,7 +13,7 @@ from opensearchpy import OpenSearch
 from opensearchpy.exceptions import ConnectionError as OSConnectionError
 
 from fscrawler.settings import FsSettings
-from fscrawler.templates import get_component_templates, get_index_templates
+from fscrawler.templates import get_index_templates, get_shared_component_templates
 
 logger = logging.getLogger("fscrawler.client")
 
@@ -133,26 +133,18 @@ class FsCrawlerClient:
             return
 
         es = self._settings.elasticsearch
-        index_name = es.index
-        folder_index = es.index_folder
         history_index = es.index_history if self._settings.fs.keep_history else ""
 
-        # Component templates for the docs index
-        for name, body in get_component_templates(index_name, self._settings.name):
+        # Shared component templates (one set per cluster)
+        for name, body in get_shared_component_templates():
             self._put_component_template(name, body, force=force)
 
-        # Component templates for the folder index (re-use same set)
-        for name, body in get_component_templates(folder_index, self._settings.name):
-            self._put_component_template(name, body, force=force)
-
-        # Component templates for the history index
-        if history_index:
-            for name, body in get_component_templates(history_index, self._settings.name):
+        # Per-index alias components + index templates
+        for name, body in get_index_templates(es.index, es.index_folder, self._settings.name, history_index):
+            if "_alias" in name:
                 self._put_component_template(name, body, force=force)
-
-        # Index templates
-        for name, body in get_index_templates(index_name, folder_index, history_index):
-            self._put_index_template(name, body, force=force)
+            else:
+                self._put_index_template(name, body, force=force)
 
     def _template_exists(self, name: str, kind: str) -> bool:
         """Return True if a component or index template already exists."""

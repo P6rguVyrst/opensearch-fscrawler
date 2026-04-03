@@ -1,0 +1,13 @@
+{
+  "template": {
+    "mappings": {
+      "properties": {
+        "superseded_date": {
+          "type": "date",
+          "format": "date_optional_time"
+        },
+        "superseded_by": { "type": "keyword" }
+      }
+    }
+  }
+}
