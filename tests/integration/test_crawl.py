@@ -168,8 +168,8 @@ class TestFullCrawl:
                 for fp in crawler.scan():
                     if crawler.is_new_or_modified(fp):
                         indexer.add(parser.parse(fp))
-                for deleted_path in crawler.get_deleted_files():
-                    indexer.delete(deleted_path)
+                for virtual_path in crawler.get_deleted_files():
+                    indexer.delete(virtual_path)
             crawler.save_checkpoint()
 
         # First crawl — index 2 files

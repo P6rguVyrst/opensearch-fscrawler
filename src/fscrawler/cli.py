@@ -262,12 +262,8 @@ def _crawl_once(
                     else:
                         raise
 
-        for deleted_path in crawler.get_deleted_files():
-            try:
-                virtual = "/" + str(Path(deleted_path).relative_to(root))
-            except ValueError:
-                virtual = "/" + Path(deleted_path).name
-            indexer.delete(virtual)
+        for virtual_path in crawler.get_deleted_files():
+            indexer.delete(virtual_path)
 
     crawler.save_checkpoint()
 
