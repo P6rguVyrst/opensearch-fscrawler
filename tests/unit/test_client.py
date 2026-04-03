@@ -359,6 +359,46 @@ class TestIndexManagement:
 # ---------------------------------------------------------------------------
 
 
+class TestHistoryTemplates:
+    def test_push_templates_includes_history_index(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from fscrawler.client import FsCrawlerClient
+        from tests.conftest import make_settings
+
+        settings = make_settings(
+            fs={"url": "/data", "keep_history": True},
+        )
+        client = FsCrawlerClient(settings)
+        client.push_templates()
+
+        # Should have pushed component templates for the history index
+        put_calls = mock_opensearch_client.cluster.put_component_template.call_args_list
+        template_names = [c.kwargs.get("name") or c.args[0] for c in put_calls]
+        history_templates = [n for n in template_names if "history" in n]
+        assert len(history_templates) > 0
+
+    def test_push_templates_skips_history_when_keep_history_false(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from fscrawler.client import FsCrawlerClient
+        from tests.conftest import make_settings
+
+        settings = make_settings(fs={"url": "/data"})  # keep_history defaults to False
+        client = FsCrawlerClient(settings)
+        client.push_templates()
+
+        put_index_calls = mock_opensearch_client.indices.put_index_template.call_args_list
+        template_names = [c.kwargs.get("name") or c.args[0] for c in put_index_calls]
+        history_templates = [n for n in template_names if "history" in n]
+        assert len(history_templates) == 0
+
+
+# ---------------------------------------------------------------------------
+# _template_exists error handling
+# ---------------------------------------------------------------------------
+
+
 class TestTemplateExistsErrorHandling:
     def test_auth_error_propagates_from_template_check(
         self, mock_opensearch_client: MagicMock

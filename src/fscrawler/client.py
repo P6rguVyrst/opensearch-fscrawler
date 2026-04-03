@@ -135,6 +135,7 @@ class FsCrawlerClient:
         es = self._settings.elasticsearch
         index_name = es.index
         folder_index = es.index_folder
+        history_index = es.index_history if self._settings.fs.keep_history else ""
 
         # Component templates for the docs index
         for name, body in get_component_templates(index_name, self._settings.name):
@@ -144,8 +145,13 @@ class FsCrawlerClient:
         for name, body in get_component_templates(folder_index, self._settings.name):
             self._put_component_template(name, body, force=force)
 
+        # Component templates for the history index
+        if history_index:
+            for name, body in get_component_templates(history_index, self._settings.name):
+                self._put_component_template(name, body, force=force)
+
         # Index templates
-        for name, body in get_index_templates(index_name, folder_index):
+        for name, body in get_index_templates(index_name, folder_index, history_index):
             self._put_index_template(name, body, force=force)
 
     def _template_exists(self, name: str, kind: str) -> bool:
@@ -219,6 +225,18 @@ class FsCrawlerClient:
         idx = index or self._settings.elasticsearch.index
         body = doc.to_dict() if hasattr(doc, "to_dict") else doc
         return self._client.index(index=idx, id=doc_id, body=body)  # type: ignore[no-any-return]
+
+    def get_document_source(self, index: str, doc_id: str) -> dict[str, Any] | None:
+        """Retrieve a document's _source by ID, returning None if not found."""
+        try:
+            result = self._client.get(index=index, id=doc_id)
+            return result["_source"]  # type: ignore[no-any-return]
+        except Exception as exc:
+            if hasattr(exc, "status_code") and exc.status_code == 404:
+                return None
+            if "not_found" in str(exc).lower():
+                return None
+            raise
 
     def delete(self, doc_id: str, index: str | None = None) -> dict[str, Any]:
         """Delete a document by ID, defaulting the index from settings."""
