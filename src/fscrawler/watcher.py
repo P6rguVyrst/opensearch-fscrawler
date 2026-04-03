@@ -9,6 +9,7 @@ for the next polling cycle.
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -77,9 +78,10 @@ class FsEventHandler(FileSystemEventHandler):
     def _index(self, path: Path) -> None:
         try:
             doc = self._parser.parse(path)
+            doc_id = hashlib.sha256(doc.path.virtual.encode()).hexdigest()
             self._client.index(
                 doc,
-                doc_id=str(path),
+                doc_id=doc_id,
                 index=self._settings.elasticsearch.index,
             )
             logger.info("Indexed %s", path)
@@ -88,8 +90,14 @@ class FsEventHandler(FileSystemEventHandler):
 
     def _delete(self, path: str) -> None:
         try:
+            root = self._settings.fs.url
+            try:
+                virtual = "/" + str(Path(path).relative_to(root))
+            except ValueError:
+                virtual = "/" + Path(path).name
+            doc_id = hashlib.sha256(virtual.encode()).hexdigest()
             self._client.delete(
-                doc_id=path,
+                doc_id=doc_id,
                 index=self._settings.elasticsearch.index,
             )
             logger.info("Deleted %s from index", path)
