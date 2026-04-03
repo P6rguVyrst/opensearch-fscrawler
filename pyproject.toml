@@ -107,6 +107,9 @@ directory = "htmlcov"
 [tool.coverage.xml]
 output = "coverage.xml"
 
+[tool.uv]
+constraint-dependencies = ["requests>=2.33.0"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
