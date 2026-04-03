@@ -86,6 +86,10 @@ class TikaParser:
         fs = self._settings.fs
         raw_bytes = file_path.read_bytes()
 
+        if not raw_bytes:
+            logger.debug("Skipping zero-byte file: %s", file_path)
+            raise ValueError(f"Cannot parse zero-byte file: {file_path}")
+
         # ------------------------------------------------------------------
         # Call Tika
         # ------------------------------------------------------------------
@@ -196,6 +200,10 @@ class TikaParser:
         metadata is derived from the provided filename and byte content.
         """
         fs = self._settings.fs
+
+        if not data:
+            raise ValueError(f"Cannot parse zero-byte upload: {filename}")
+
         tika_meta = self._call_tika(data)
 
         ct = content_type or str(tika_meta.get("Content-Type", "application/octet-stream"))

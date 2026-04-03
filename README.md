@@ -50,7 +50,7 @@ image: ghcr.io/p6rguvyrst/opensearch-fscrawler:latest
 docker compose up -d
 
 # Watch the logs
-docker compose logs -f fscrawler
+docker compose logs -f fscrawler-markdown fscrawler-pdf fscrawler-catchall
 ```
 
 ### Locally (development)
@@ -60,14 +60,14 @@ docker compose logs -f fscrawler
 make develop
 
 # Create a job config
-fscrawler --setup myjob
-# Edit ~/.fscrawler/myjob/_settings.yaml
+fscrawler --setup myfiles
+# Edit ~/.fscrawler/myfiles/_settings.yaml
 
 # Run once
-fscrawler myjob
+fscrawler myfiles
 
-# Run continuously
-fscrawler --loop myjob
+# Run continuously (watches for filesystem changes)
+fscrawler --loop myfiles
 ```
 
 ## Requirements

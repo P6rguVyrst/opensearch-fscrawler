@@ -88,7 +88,6 @@ class FsConfig:
     """Configuration for the file system source (fs: block)."""
 
     url: str = ""
-    update_rate: float = 900.0  # 15m default
     includes: list[str] = field(default_factory=list)
     excludes: list[str] = field(default_factory=list)
     json_support: bool = False
@@ -212,8 +211,6 @@ class FsSettings:
         # Java default is <tmpdir>/es — do not require explicit fs.url (Java parity)
         fs = FsConfig(url=fs_data.get("url") or str(Path(tempfile.gettempdir()) / "es"))
 
-        if "update_rate" in fs_data:
-            fs.update_rate = parse_duration(str(fs_data["update_rate"]))
         if "includes" in fs_data:
             fs.includes = list(fs_data["includes"])
         if "excludes" in fs_data:

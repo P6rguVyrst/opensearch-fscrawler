@@ -2,6 +2,10 @@
 /vendor/
 /mixin/vendor/
 playground/
+
+# Runtime checkpoint state
+config/**/.fscrawler_checkpoint.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

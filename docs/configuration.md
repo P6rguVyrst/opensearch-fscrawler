@@ -15,7 +15,6 @@ name: "myjob"
 
 fs:
   url: "/data"
-  update_rate: "15m"
   includes: ["*.pdf", "*.doc", "*.docx"]
   excludes: ["*.tmp", "~*"]
   json_support: false
@@ -47,7 +46,6 @@ elasticsearch:
   index: "myjob_docs"
   index_folder: "myjob_folder"
   bulk_size: 100
-
   byte_size: "10mb"
   push_templates: true
 
@@ -63,7 +61,6 @@ rest:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `url` | string | `/tmp/es` | Root directory to crawl. |
-| `update_rate` | duration | `15m` | How often to re-crawl in loop mode. |
 | `includes` | list[string] | `[]` | Glob patterns matched against the **filename only**. Empty = all files. Example: `["*.pdf", "*.docx"]` |
 | `excludes` | list[string] | `[]` | Glob patterns matched against the **filename only**. Matching files are skipped. Example: `["~*", "*.tmp"]` |
 | `json_support` | bool | `false` | Index JSON files as structured documents. |
@@ -125,7 +122,6 @@ Examples: `512mb`, `10kb`, `1gb`.
 | `index` | string | `{name}_docs` | Index for document data. |
 | `index_folder` | string | `{name}_folder` | Index for folder entries. |
 | `bulk_size` | int | `100` | Number of documents per bulk request. |
-
 | `byte_size` | byte size | `10mb` | Flush when the buffer reaches this size. |
 | `push_templates` | bool | `true` | Create/update index and component templates on startup. |
 
@@ -157,7 +153,6 @@ The following environment variables are supported:
 | `FSCRAWLER_ELASTICSEARCH_SSL_VERIFICATION` | `elasticsearch.ssl_verification` | `true` / `false`. |
 | `FSCRAWLER_ELASTICSEARCH_INDEX` | `elasticsearch.index` | |
 | `FSCRAWLER_ELASTICSEARCH_BULK_SIZE` | `elasticsearch.bulk_size` | |
-
 | `FSCRAWLER_ELASTICSEARCH_BYTE_SIZE` | `elasticsearch.byte_size` | |
 | `FSCRAWLER_REST_URL` | `rest.url` | |
 | `FSCRAWLER_REST_ENABLE_CORS` | `rest.enable_cors` | `true` / `false`. |

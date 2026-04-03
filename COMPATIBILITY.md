@@ -14,7 +14,7 @@ migrating from Java, and for developers working on closing the gaps.
 | `--config_dir` | ✅ | ✅ | Also reads `FSCRAWLER_CONFIG_DIR` env var |
 | `--rest` | ✅ | ✅ | Starts embedded REST API server |
 | `--setup` | ✅ | ✅ | Creates template `_settings.yaml` |
-| `--loop` | Integer — number of scan loops (`-1` = infinite) | Boolean flag — always infinite | ⚠️ `--loop 5` silently treats `5` as `job_name` in Python |
+| `--loop` | Integer — number of scan loops (`-1` = infinite) | Boolean flag — runs watchdog observer for continuous event-driven indexing | ⚠️ `--loop 5` silently treats `5` as `job_name` in Python |
 | `--restart` | ✅ Resets job state without wiping indices | ❌ Not implemented | See `TODO.md` |
 | `--list` | ✅ Lists configured jobs | ❌ Not implemented | See `TODO.md` |
 | `--upgrade` | ✅ Upgrades ES indices from old schema | ❌ Not implemented | See `TODO.md` |
@@ -38,7 +38,7 @@ understand are silently ignored.
 | Field | Java | Python | Notes |
 |---|---|---|---|
 | `url` | Optional, defaults to `/tmp/es` | Optional, defaults to `/tmp/es` | ✅ Compatible |
-| `update_rate` | Duration string e.g. `15m` | ✅ Same format | ✅ Compatible |
+| `update_rate` | Duration string e.g. `15m` | ❌ Removed — watchdog event-driven indexing replaces polling | ⚠️ Field silently ignored if present in config |
 | `includes` | `List<String>` glob patterns | ✅ | ⚠️ **Patterns match filename only** — `*/*.pdf` never matches. Use `*.pdf`. See note below. |
 | `excludes` | `List<String>`, default `*/~*` | ✅ | ⚠️ Same filename-only matching. Use `~*` not `*/~*`. |
 | `json_support` | `boolean` | ✅ | ✅ Compatible |
@@ -158,7 +158,7 @@ These defaults differ between the two editions.  Explicit values in
 |---|---|---|---|
 | `fs.url` | `/tmp/es` | `/tmp/es` | ✅ Same |
 | `fs.filename_as_id` | `false` | `true` | ⚠️ **High** — affects document IDs; existing Java indices will accumulate duplicates if migrated |
-| `fs.update_rate` (crawl trigger) | Polls directory on timer | Event-driven via watchdog + initial scan on startup | ✅ **Python is faster** — files are indexed immediately on create/modify rather than waiting for the next poll cycle |
+| `fs.update_rate` (crawl trigger) | Polls directory on timer | ❌ Removed — always event-driven via watchdog + initial scan on startup | ⚠️ **Breaking** — `update_rate` setting is ignored; `--loop` now uses watchdog instead of sleep-based polling |
 | `elasticsearch.urls` | `https://127.0.0.1:9200` (HTTPS) | `http://localhost:9200` (HTTP) | ⚠️ Medium — connection will fail if ES requires TLS and no URL is set |
 | `rest.url` | `http://127.0.0.1:8080/fscrawler` | `http://127.0.0.1:8080` | ⚠️ Low — REST clients that call `/fscrawler/...` paths will 404 |
 

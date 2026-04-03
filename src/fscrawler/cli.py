@@ -41,7 +41,7 @@ logger = logging.getLogger("fscrawler.cli")
     "--loop",
     is_flag=True,
     default=False,
-    help="Run continuously, sleeping update_rate seconds between crawls.",
+    help="Run continuously, watching for filesystem changes via watchdog.",
 )
 @click.option(
     "--rest",
@@ -58,7 +58,6 @@ logger = logging.getLogger("fscrawler.cli")
 # TODO(#missing): --restart — restart job as if it never ran (Java parity)
 # TODO(#missing): --list   — list all configured jobs (Java parity)
 # TODO(#missing): --upgrade — upgrade Elasticsearch indices (Java parity)
-# TODO(#missing): --loop <N> integer form — run exactly N loops (Java parity; currently boolean)
 @click.option(
     "--log-format",
     type=click.Choice(["json", "text"], case_sensitive=False),
@@ -167,7 +166,7 @@ def _run_rest(settings_file: Path, job_dir: Path) -> None:
         name="fscrawler-bg",
     )
     bg_thread.start()
-    logger.info("Background crawler started (update_rate=%.0fs)", settings.fs.update_rate)
+    logger.info("Background crawler started (watchdog event-driven)")
 
     app = create_app(settings=settings, client=client, crawler_state=crawler_state)
 
@@ -269,7 +268,7 @@ def _crawl_once(
 
 
 def _run(job_name: str, settings_file: Path, job_dir: Path, loop: bool) -> None:
-    """Load settings and start the crawl (single run or loop)."""
+    """Load settings and start the crawl (single run or watchdog loop)."""
     import os
 
     from fscrawler.client import FsCrawlerClient
@@ -287,14 +286,22 @@ def _run(job_name: str, settings_file: Path, job_dir: Path, loop: bool) -> None:
 
     parser = TikaParser(settings, tika_url=settings.fs.tika_url)
 
+    # Always do an initial full scan
+    _crawl_once(settings, client, parser, job_dir)
+
     if loop:
-        while True:
-            _crawl_once(settings, client, parser, job_dir)
-            sleep_secs = settings.fs.update_rate
-            logger.info("Sleeping %.0f seconds until next crawl…", sleep_secs)
-            time.sleep(sleep_secs)
-    else:
-        _crawl_once(settings, client, parser, job_dir)
+        # Stay alive with watchdog event-driven indexing
+        handler = FsEventHandler(settings, client, parser, CrawlerState())
+        observer = Observer()
+        observer.schedule(handler, str(settings.fs.url), recursive=True)
+        observer.start()
+        logger.info("Watchdog observer started on %s", settings.fs.url)
+        try:
+            while observer.is_alive():
+                time.sleep(1)
+        finally:
+            observer.stop()
+            observer.join()
 
 
 def _do_setup(job_dir: Path, settings_file: Path) -> None:
@@ -308,7 +315,6 @@ def _do_setup(job_dir: Path, settings_file: Path) -> None:
 name: "{job_dir.name}"
 fs:
   url: "/data"
-  update_rate: "15m"
   includes: []
   excludes: []
   follow_symlinks: false

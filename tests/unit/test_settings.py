@@ -108,7 +108,6 @@ class TestFsSettingsFromDict:
         data = {"name": "myjob", "fs": {"url": "/data"}}
         settings = FsSettings.from_dict(data)
         # Check a representative set of defaults
-        assert settings.fs.update_rate == parse_duration("15m")
         assert settings.fs.remove_deleted is True
         assert settings.fs.index_content is True
         assert settings.elasticsearch.bulk_size == 100
@@ -130,11 +129,6 @@ class TestFsSettingsFromDict:
     def test_name_required(self) -> None:
         with pytest.raises(FsSettingsError, match="name"):
             FsSettings.from_dict({"fs": {"url": "/data"}})
-
-    def test_update_rate_parsed(self) -> None:
-        data = {"name": "j", "fs": {"url": "/", "update_rate": "15m"}}
-        settings = FsSettings.from_dict(data)
-        assert settings.fs.update_rate == 900.0
 
     def test_ignore_above_parsed(self) -> None:
         data = {"name": "j", "fs": {"url": "/", "ignore_above": "512mb"}}
@@ -194,7 +188,6 @@ class TestFsSettingsFromFile:
             name: filejob
             fs:
               url: /some/path
-              update_rate: 10m
             elasticsearch:
               nodes:
                 - url: http://localhost:9200
@@ -204,7 +197,6 @@ class TestFsSettingsFromFile:
         settings_file.write_text(content)
         settings = FsSettings.from_file(settings_file)
         assert settings.name == "filejob"
-        assert settings.fs.update_rate == 600.0
         assert settings.elasticsearch.nodes == ["http://localhost:9200"]
 
     def test_file_not_found_raises(self, tmp_path: Path) -> None:
