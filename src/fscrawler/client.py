@@ -13,7 +13,7 @@ from opensearchpy import OpenSearch
 from opensearchpy.exceptions import ConnectionError as OSConnectionError
 
 from fscrawler.settings import FsSettings
-from fscrawler.templates import get_index_templates, get_shared_component_templates
+from fscrawler.templates import get_component_templates, get_index_templates
 
 logger = logging.getLogger("fscrawler.client")
 
@@ -132,19 +132,11 @@ class FsCrawlerClient:
             logger.debug("push_templates is disabled — skipping.")
             return
 
-        es = self._settings.elasticsearch
-        history_index = es.index_history if self._settings.fs.keep_history else ""
-
-        # Shared component templates (one set per cluster)
-        for name, body in get_shared_component_templates():
+        for name, body in get_component_templates():
             self._put_component_template(name, body, force=force)
 
-        # Per-index alias components + index templates
-        for name, body in get_index_templates(es.index, es.index_folder, self._settings.name, history_index):
-            if "_alias" in name:
-                self._put_component_template(name, body, force=force)
-            else:
-                self._put_index_template(name, body, force=force)
+        for name, body in get_index_templates():
+            self._put_index_template(name, body, force=force)
 
     def _template_exists(self, name: str, kind: str) -> bool:
         """Return True if a component or index template already exists."""

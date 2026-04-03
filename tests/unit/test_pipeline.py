@@ -23,8 +23,8 @@ import pytest
 
 from fscrawler.settings import FsSettings
 from fscrawler.templates import (
+    get_component_templates,
     get_index_templates,
-    get_shared_component_templates,
     mapping_history_template,
 )
 
@@ -37,8 +37,6 @@ def make_settings(url: str, **overrides: Any) -> FsSettings:
         "fs": fs,
         "elasticsearch": {
             "nodes": [{"url": "http://localhost:9200"}],
-            "index": "test_docs",
-            "index_folder": "test_folder",
             "bulk_size": 100,
             "byte_size": "10mb",
         },
@@ -101,7 +99,7 @@ class TestBothIndicesReceiveDocuments:
         parser = TikaParser(settings, tika_url=settings.fs.tika_url)
         _crawl_once(settings, client, parser, tmp_path)
 
-        assert "test_docs" in indices_written(mock_opensearch_client), (
+        assert "fscrawler_docs_test" in indices_written(mock_opensearch_client), (
             "No documents were written to the docs index"
         )
 
@@ -125,7 +123,7 @@ class TestBothIndicesReceiveDocuments:
         parser = TikaParser(settings, tika_url=settings.fs.tika_url)
         _crawl_once(settings, client, parser, tmp_path)
 
-        assert "test_folder" in indices_written(mock_opensearch_client), (
+        assert "fscrawler_folders_test" in indices_written(mock_opensearch_client), (
             "No documents were written to the folder index — "
             "index_folders=True but folder documents never reached OpenSearch"
         )
@@ -150,7 +148,7 @@ class TestBothIndicesReceiveDocuments:
         parser = TikaParser(settings, tika_url=settings.fs.tika_url)
         _crawl_once(settings, client, parser, tmp_path)
 
-        assert "test_folder" not in indices_written(mock_opensearch_client)
+        assert "fscrawler_folders_test" not in indices_written(mock_opensearch_client)
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +178,7 @@ class TestFolderDocumentShape:
         client = FsCrawlerClient(settings)
         parser = TikaParser(settings, tika_url=settings.fs.tika_url)
         _crawl_once(settings, client, parser, tmp_path)
-        return docs_for_index(mock_opensearch_client, "test_folder")
+        return docs_for_index(mock_opensearch_client, "fscrawler_folders_test")
 
     def test_folder_document_has_path_block(
         self, tmp_path: Path, mock_opensearch_client: MagicMock, mock_tika: MagicMock
@@ -226,11 +224,11 @@ class TestHistoryTemplate:
         assert "superseded_by" in props
         assert props["superseded_by"]["type"] == "keyword"
 
-    def test_shared_components_include_history(self) -> None:
-        names = [name for name, _ in get_shared_component_templates()]
+    def test_components_include_history(self) -> None:
+        names = [name for name, _ in get_component_templates()]
         assert "fscrawler_mapping_history" in names
 
-    def test_get_index_templates_includes_history(self) -> None:
-        templates = get_index_templates("test_docs", "test_folder", "test", history_index="test_docs_history")
+    def test_index_templates_includes_history(self) -> None:
+        templates = get_index_templates()
         names = [name for name, _ in templates]
-        assert "fscrawler_test_docs_history_history" in names
+        assert "fscrawler_index_template_history" in names

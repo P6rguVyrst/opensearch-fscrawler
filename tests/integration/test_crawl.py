@@ -44,8 +44,8 @@ def integration_settings(tmp_path: Path) -> Any:
             },
             "elasticsearch": {
                 "nodes": [{"url": OPENSEARCH_URL}],
-                "index": f"{job_name}_docs",
-                "index_folder": f"{job_name}_folder",
+                "index": f"fscrawler_docs_{job_name}",
+                "index_folder": f"fscrawler_folders_{job_name}",
                 "bulk_size": 10,
                 "push_templates": True,
                 "ssl_verification": False,

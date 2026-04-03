@@ -3,10 +3,9 @@
 
 Templates are compatible with both Elasticsearch 7.x/8.x/9.x and OpenSearch 1.x/2.x/3.x.
 
-All template bodies live in _templates/*.json — this module loads them and
-wires up the per-index naming.
+All template bodies live in _templates/*.json — this module loads them.
 
-Shared component templates (created once per cluster):
+Component templates (created once per cluster):
   fscrawler_settings_total_fields
   fscrawler_mapping_file
   fscrawler_mapping_path
@@ -16,11 +15,10 @@ Shared component templates (created once per cluster):
   fscrawler_mapping_attributes
   fscrawler_mapping_history
 
-Per-index component templates:
-  fscrawler_{index}_alias
-
-Index templates compose the shared components with a per-index alias:
-  fscrawler_{index}_docs / fscrawler_{index}_folders / fscrawler_{index}_history
+Index templates (created once per cluster, match by naming convention):
+  fscrawler_docs     → fscrawler_docs_*
+  fscrawler_folders  → fscrawler_folders_*
+  fscrawler_history  → fscrawler_history_*
 """
 
 from __future__ import annotations
@@ -31,7 +29,6 @@ from typing import Any
 
 _TEMPLATES_DIR = Path(__file__).parent / "_templates"
 
-# Shared component template names (no per-index prefix)
 SHARED_COMPONENTS = [
     "settings_total_fields",
     "mapping_file",
@@ -43,6 +40,12 @@ SHARED_COMPONENTS = [
     "mapping_history",
 ]
 
+INDEX_TEMPLATES = [
+    "index_template_docs",
+    "index_template_folders",
+    "index_template_history",
+]
+
 
 def _load(name: str) -> dict[str, Any]:
     """Load a JSON template file from the _templates directory."""
@@ -50,70 +53,16 @@ def _load(name: str) -> dict[str, Any]:
         return json.load(f)  # type: ignore[no-any-return]
 
 
-def _load_index_template(name: str, index_name: str) -> dict[str, Any]:
-    """Load an index template JSON and wire in the per-index alias and pattern."""
-    body = _load(name)
-    body["index_patterns"] = [index_name]
-    body["composed_of"] = [f"fscrawler_{index_name}_alias"] + body["composed_of"]
-    return body
-
-
-# ---------------------------------------------------------------------------
-# Shared component templates (one per cluster, not per index)
-# ---------------------------------------------------------------------------
-
-
-def get_shared_component_templates() -> list[tuple[str, dict[str, Any]]]:
-    """Return (name, body) tuples for all shared component templates."""
+def get_component_templates() -> list[tuple[str, dict[str, Any]]]:
+    """Return (name, body) tuples for all component templates."""
     return [(f"fscrawler_{name}", _load(name)) for name in SHARED_COMPONENTS]
+
+
+def get_index_templates() -> list[tuple[str, dict[str, Any]]]:
+    """Return (name, body) tuples for all index templates."""
+    return [(f"fscrawler_{name}", _load(name)) for name in INDEX_TEMPLATES]
 
 
 def mapping_history_template() -> dict[str, Any]:
     """Return the history mapping component template body."""
     return _load("mapping_history")
-
-
-# ---------------------------------------------------------------------------
-# Per-index alias template
-# ---------------------------------------------------------------------------
-
-
-def alias_template(alias_name: str) -> dict[str, Any]:
-    """Component template that creates an alias pointing to the job name."""
-    return {"template": {"aliases": {alias_name: {}}}}
-
-
-# ---------------------------------------------------------------------------
-# Index templates
-# ---------------------------------------------------------------------------
-
-
-def get_index_templates(
-    docs_index: str,
-    folder_index: str,
-    job_name: str,
-    history_index: str = "",
-) -> list[tuple[str, dict[str, Any]]]:
-    """Return (name, body) tuples for all index templates and their per-index alias components."""
-    result: list[tuple[str, dict[str, Any]]] = []
-
-    # Per-index alias component templates
-    for index_name in [docs_index, folder_index] + ([history_index] if history_index else []):
-        result.append((f"fscrawler_{index_name}_alias", alias_template(job_name)))
-
-    # Index templates — loaded from JSON, parameterised with the index name
-    result.append((
-        f"fscrawler_{docs_index}_docs",
-        _load_index_template("index_template_docs", docs_index),
-    ))
-    result.append((
-        f"fscrawler_{folder_index}_folders",
-        _load_index_template("index_template_folders", folder_index),
-    ))
-    if history_index:
-        result.append((
-            f"fscrawler_{history_index}_history",
-            _load_index_template("index_template_history", history_index),
-        ))
-
-    return result

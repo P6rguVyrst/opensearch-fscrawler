@@ -118,9 +118,9 @@ class ElasticsearchSettings:
     password: str = ""
     api_key: str = ""
     ssl_verification: bool = True
-    index: str = ""  # will be set to "{name}_docs" if empty
-    index_folder: str = ""  # will be set to "{name}_folder" if empty
-    index_history: str = ""  # will be set to "{name}_docs_history" if empty
+    index: str = ""  # will be set to "fscrawler_docs_{name}" if empty
+    index_folder: str = ""  # will be set to "fscrawler_folders_{name}" if empty
+    index_history: str = ""  # will be set to "fscrawler_history_{name}" if empty
     bulk_size: int = 100
     byte_size: int = 10 * 1024 * 1024  # 10mb
     push_templates: bool = True
@@ -290,11 +290,11 @@ class FsSettings:
 
         # Apply defaults that depend on job name
         if not es.index:
-            es.index = f"{name}_docs"
+            es.index = f"fscrawler_docs_{name}"
         if not es.index_folder:
-            es.index_folder = f"{name}_folder"
+            es.index_folder = f"fscrawler_folders_{name}"
         if not es.index_history:
-            es.index_history = f"{name}_docs_history"
+            es.index_history = f"fscrawler_history_{name}"
 
         # Trigger __post_init__ warning after all fields are set
         if es.api_key and (es.username or es.password):

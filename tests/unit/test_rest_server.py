@@ -584,8 +584,8 @@ class TestCliRestFlag:
             CliRunner().invoke(main, ["--config_dir", str(tmp_path), "--rest", "test-job"])
 
         called_indices = [c.args[0] for c in mock_client.ensure_index.call_args_list]
-        assert "test-job_docs" in called_indices
-        assert "test-job_folder" in called_indices
+        assert "fscrawler_docs_test-job" in called_indices
+        assert "fscrawler_folders_test-job" in called_indices
 
     def test_rest_mode_starts_background_crawler_thread(self, tmp_path: Path) -> None:
         """--rest must start a daemon thread that runs the background crawler."""

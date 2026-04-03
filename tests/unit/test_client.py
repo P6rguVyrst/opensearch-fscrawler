@@ -289,7 +289,7 @@ class TestBulkIndex:
         settings = make_settings()
         client = FsCrawlerClient(settings)
         operations = [
-            {"index": {"_index": "test_docs", "_id": "doc1"}},
+            {"index": {"_index": "fscrawler_docs_test", "_id": "doc1"}},
             {"content": "hello"},
         ]
         result = client.bulk(operations)
@@ -302,7 +302,7 @@ class TestBulkIndex:
         settings = make_settings()
         client = FsCrawlerClient(settings)
         operations = [
-            {"delete": {"_index": "test_docs", "_id": "doc_to_delete"}},
+            {"delete": {"_index": "fscrawler_docs_test", "_id": "doc_to_delete"}},
         ]
         client.bulk(operations)
         call_args = mock_opensearch_client.bulk.call_args
@@ -350,8 +350,8 @@ class TestIndexManagement:
         mock_opensearch_client.delete.return_value = {"result": "deleted"}
         settings = make_settings()
         client = FsCrawlerClient(settings)
-        client.delete_document("test_docs", "doc1")
-        mock_opensearch_client.delete.assert_called_once_with(index="test_docs", id="doc1")
+        client.delete_document("fscrawler_docs_test", "doc1")
+        mock_opensearch_client.delete.assert_called_once_with(index="fscrawler_docs_test", id="doc1")
 
 
 # ---------------------------------------------------------------------------
@@ -359,39 +359,27 @@ class TestIndexManagement:
 # ---------------------------------------------------------------------------
 
 
-class TestHistoryTemplates:
-    def test_push_templates_includes_history_index(
+class TestPushTemplates:
+    def test_push_templates_creates_all_component_and_index_templates(
         self, mock_opensearch_client: MagicMock
     ) -> None:
         from fscrawler.client import FsCrawlerClient
         from tests.conftest import make_settings
 
-        settings = make_settings(
-            fs={"url": "/data", "keep_history": True},
-        )
+        settings = make_settings(fs={"url": "/data"})
         client = FsCrawlerClient(settings)
         client.push_templates()
 
-        # Should have pushed component templates for the history index
-        put_calls = mock_opensearch_client.cluster.put_component_template.call_args_list
-        template_names = [c.kwargs.get("name") or c.args[0] for c in put_calls]
-        history_templates = [n for n in template_names if "history" in n]
-        assert len(history_templates) > 0
+        component_calls = mock_opensearch_client.cluster.put_component_template.call_args_list
+        component_names = {c.kwargs.get("name") or c.args[0] for c in component_calls}
+        assert "fscrawler_mapping_history" in component_names
+        assert "fscrawler_mapping_file" in component_names
 
-    def test_push_templates_skips_history_when_keep_history_false(
-        self, mock_opensearch_client: MagicMock
-    ) -> None:
-        from fscrawler.client import FsCrawlerClient
-        from tests.conftest import make_settings
-
-        settings = make_settings(fs={"url": "/data"})  # keep_history defaults to False
-        client = FsCrawlerClient(settings)
-        client.push_templates()
-
-        put_index_calls = mock_opensearch_client.indices.put_index_template.call_args_list
-        template_names = [c.kwargs.get("name") or c.args[0] for c in put_index_calls]
-        history_templates = [n for n in template_names if "history" in n]
-        assert len(history_templates) == 0
+        index_calls = mock_opensearch_client.indices.put_index_template.call_args_list
+        index_names = {c.kwargs.get("name") or c.args[0] for c in index_calls}
+        assert "fscrawler_index_template_docs" in index_names
+        assert "fscrawler_index_template_folders" in index_names
+        assert "fscrawler_index_template_history" in index_names
 
 
 # ---------------------------------------------------------------------------

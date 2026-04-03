@@ -169,7 +169,7 @@ class TestIndexerDelete:
         call_args = mock_opensearch_client.bulk.call_args
         body = call_args[1].get("body") or call_args[0][0]
         delete_ops = [op for op in body if "delete" in op]
-        assert delete_ops[0]["delete"]["_index"] == "test_docs"
+        assert delete_ops[0]["delete"]["_index"] == "fscrawler_docs_test"
 
 
 # ---------------------------------------------------------------------------
@@ -242,8 +242,6 @@ class TestIndexerHistory:
             fs={"url": "/data", "keep_history": True},
             elasticsearch={
                 "bulk_size": 100,
-                "index": "test_docs",
-                "index_history": "test_docs_history",
             },
         )
 
@@ -274,7 +272,7 @@ class TestIndexerHistory:
         body = mock_opensearch_client.bulk.call_args[1]["body"]
         # Should have: history index action, history doc, main index action, main doc
         index_actions = [op for op in body if "index" in op]
-        history_actions = [a for a in index_actions if a["index"]["_index"] == "test_docs_history"]
+        history_actions = [a for a in index_actions if a["index"]["_index"] == "fscrawler_history_test"]
         assert len(history_actions) == 1
 
     def test_history_skips_when_checksum_unchanged(
@@ -303,7 +301,7 @@ class TestIndexerHistory:
         # Should still index (update in-place) but no history entry
         body = mock_opensearch_client.bulk.call_args[1]["body"]
         index_actions = [op for op in body if "index" in op]
-        history_actions = [a for a in index_actions if a["index"]["_index"] == "test_docs_history"]
+        history_actions = [a for a in index_actions if a["index"]["_index"] == "fscrawler_history_test"]
         assert len(history_actions) == 0
 
     def test_history_not_written_when_keep_history_false(
@@ -346,7 +344,7 @@ class TestIndexerHistory:
         body = mock_opensearch_client.bulk.call_args[1]["body"]
         # Should have: history index action, history doc, delete action
         index_actions = [op for op in body if "index" in op]
-        history_actions = [a for a in index_actions if a["index"]["_index"] == "test_docs_history"]
+        history_actions = [a for a in index_actions if a["index"]["_index"] == "fscrawler_history_test"]
         assert len(history_actions) == 1
         delete_actions = [op for op in body if "delete" in op]
         assert len(delete_actions) == 1

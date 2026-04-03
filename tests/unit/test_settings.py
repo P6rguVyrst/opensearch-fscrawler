@@ -154,12 +154,12 @@ class TestFsSettingsFromDict:
     def test_index_defaults_to_name_docs(self) -> None:
         data = {"name": "myjob", "fs": {"url": "/data"}}
         settings = FsSettings.from_dict(data)
-        assert settings.elasticsearch.index == "myjob_docs"
+        assert settings.elasticsearch.index == "fscrawler_docs_myjob"
 
     def test_index_folder_defaults_to_name_folder(self) -> None:
         data = {"name": "myjob", "fs": {"url": "/data"}}
         settings = FsSettings.from_dict(data)
-        assert settings.elasticsearch.index_folder == "myjob_folder"
+        assert settings.elasticsearch.index_folder == "fscrawler_folders_myjob"
 
     def test_explicit_index_not_overridden(self) -> None:
         data = {
@@ -330,7 +330,7 @@ class TestContentAddressedSettings:
     def test_index_history_defaults_to_name_docs_history(self) -> None:
         data = {"name": "myjob", "fs": {"url": "/data"}}
         settings = FsSettings.from_dict(data)
-        assert settings.elasticsearch.index_history == "myjob_docs_history"
+        assert settings.elasticsearch.index_history == "fscrawler_history_myjob"
 
     def test_index_history_explicit(self) -> None:
         data = {

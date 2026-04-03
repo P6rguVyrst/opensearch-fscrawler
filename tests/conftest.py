@@ -38,8 +38,6 @@ def make_settings(**overrides: Any) -> Any:
         "fs": {"url": "/data"},
         "elasticsearch": {
             "nodes": [{"url": "http://localhost:9200"}],
-            "index": "test_docs",
-            "index_folder": "test_folder",
             "bulk_size": 100,
             "byte_size": "10mb",
         },
@@ -110,8 +108,6 @@ def sample_settings_dict() -> dict[str, Any]:
             "password": "",
             "api_key": "",
             "ssl_verification": False,
-            "index": "test_docs",
-            "index_folder": "test_folder",
             "bulk_size": 100,
             "byte_size": "10mb",
             "push_templates": True,
