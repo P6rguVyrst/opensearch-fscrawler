@@ -196,6 +196,23 @@ def mapping_attributes_template() -> dict[str, Any]:
     }
 
 
+def mapping_history_template() -> dict[str, Any]:
+    """Component template for document history (superseded version tracking)."""
+    return {
+        "template": {
+            "mappings": {
+                "properties": {
+                    "superseded_date": {
+                        "type": "date",
+                        "format": "date_optional_time",
+                    },
+                    "superseded_by": {"type": "keyword"},
+                }
+            }
+        }
+    }
+
+
 # ---------------------------------------------------------------------------
 # Index template builders
 # ---------------------------------------------------------------------------
@@ -232,6 +249,25 @@ def index_template_folders(index_name: str) -> dict[str, Any]:
     }
 
 
+def index_template_history(index_name: str) -> dict[str, Any]:
+    """Composable index template for the document history index."""
+    return {
+        "index_patterns": [index_name],
+        "priority": 500,
+        "composed_of": [
+            f"fscrawler_{index_name}_alias",
+            f"fscrawler_{index_name}_settings_total_fields",
+            f"fscrawler_{index_name}_mapping_attributes",
+            f"fscrawler_{index_name}_mapping_file",
+            f"fscrawler_{index_name}_mapping_path",
+            f"fscrawler_{index_name}_mapping_attachment",
+            f"fscrawler_{index_name}_mapping_content",
+            f"fscrawler_{index_name}_mapping_meta",
+            f"fscrawler_{index_name}_mapping_history",
+        ],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Aggregate: all templates for a given job
 # ---------------------------------------------------------------------------
@@ -248,14 +284,20 @@ def get_component_templates(index_name: str, job_name: str) -> list[tuple[str, d
         (f"fscrawler_{index_name}_mapping_content", mapping_content_template()),
         (f"fscrawler_{index_name}_mapping_attachment", mapping_attachment_template()),
         (f"fscrawler_{index_name}_mapping_attributes", mapping_attributes_template()),
+        (f"fscrawler_{index_name}_mapping_history", mapping_history_template()),
     ]
 
 
 def get_index_templates(
-    docs_index: str, folder_index: str
+    docs_index: str, folder_index: str, history_index: str = ""
 ) -> list[tuple[str, dict[str, Any]]]:
     """Return a list of (template_name, body) tuples for the index templates."""
-    return [
+    templates = [
         (f"fscrawler_{docs_index}_docs", index_template_docs(docs_index)),
         (f"fscrawler_{folder_index}_folders", index_template_folders(folder_index)),
     ]
+    if history_index:
+        templates.append(
+            (f"fscrawler_{history_index}_docs_history", index_template_history(history_index))
+        )
+    return templates
