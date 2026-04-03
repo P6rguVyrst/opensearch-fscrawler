@@ -62,8 +62,13 @@ class BulkIndexer:
     def add(self, doc: Document) -> None:
         """Add a document to the buffer; flush if threshold is reached."""
         doc_id = self._make_id(doc.path.virtual)
-        action = {"index": {"_index": self._index, "_id": doc_id}}
         doc_body = doc.to_dict()
+
+        # History: check for existing doc and archive if content changed
+        if self._keep_history:
+            self._archive_if_changed(doc_id, doc.file.checksum)
+
+        action = {"index": {"_index": self._index, "_id": doc_id}}
 
         # Estimate byte size: use actual JSON-serialized size
         estimated = len(json.dumps(doc_body, default=str).encode("utf-8"))
@@ -99,6 +104,11 @@ class BulkIndexer:
     def delete(self, virtual_path: str) -> None:
         """Queue a delete operation for the given virtual path."""
         doc_id = self._make_id(virtual_path)
+
+        # History: archive the deleted document
+        if self._keep_history:
+            self._archive_if_changed(doc_id, "deleted")
+
         action: dict[str, Any] = {"delete": {"_index": self._index, "_id": doc_id}}
 
         with self._lock:
@@ -119,6 +129,36 @@ class BulkIndexer:
     def _make_id(self, virtual_path: str) -> str:
         """Generate a stable document ID from the virtual path."""
         return hashlib.sha256(virtual_path.encode()).hexdigest()
+
+    def _archive_if_changed(self, doc_id: str, new_checksum: str | None) -> None:
+        """Copy the existing document to the history index if its content has changed."""
+        from datetime import UTC, datetime
+
+        try:
+            existing = self._client.get_document_source(self._index, doc_id)
+        except Exception:
+            return  # document doesn't exist yet — nothing to archive
+
+        if existing is None:
+            return
+
+        old_checksum = existing.get("file", {}).get("checksum")
+        if old_checksum == new_checksum:
+            return  # content unchanged — skip
+
+        # Add history metadata
+        existing["superseded_date"] = datetime.now(tz=UTC).isoformat()
+        existing["superseded_by"] = new_checksum or "deleted"
+
+        # History doc ID: {original_id}_{old_checksum} for uniqueness
+        history_id = f"{doc_id}_{old_checksum}" if old_checksum else doc_id
+        history_action = {"index": {"_index": self._index_history, "_id": history_id}}
+        estimated = len(json.dumps(existing, default=str).encode("utf-8"))
+
+        with self._lock:
+            self._buffer.append(history_action)
+            self._buffer.append(existing)
+            self._buffer_bytes += estimated
 
     def _flush_locked(self) -> None:
         """Send buffered operations.  Must be called with self._lock held."""

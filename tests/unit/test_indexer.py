@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock
 
 from tests.conftest import make_document, make_settings
@@ -228,6 +229,127 @@ class TestByteEstimation:
 
         # Should have flushed by now
         assert mock_opensearch_client.bulk.called
+
+
+# ---------------------------------------------------------------------------
+# History support
+# ---------------------------------------------------------------------------
+
+
+class TestIndexerHistory:
+    def _make_history_settings(self) -> Any:
+        return make_settings(
+            fs={"url": "/data", "keep_history": True},
+            elasticsearch={
+                "bulk_size": 100,
+                "index": "test_docs",
+                "index_history": "test_docs_history",
+            },
+        )
+
+    def test_history_copies_old_version_before_update(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = self._make_history_settings()
+        client = FsCrawlerClient(settings)
+
+        # Simulate an existing document with a different checksum
+        mock_opensearch_client.get.return_value = {
+            "_source": {
+                "file": {"checksum": "old_hash", "filename": "test.txt"},
+                "path": {"virtual": "/test.txt", "real": "/data/test.txt", "root": "/data"},
+                "content": "old content",
+            }
+        }
+
+        indexer = BulkIndexer(client, settings)
+        doc = make_document("/data/test.txt", content="new content")
+        doc.file.checksum = "new_hash"
+        indexer.add(doc)
+        indexer.flush()
+
+        body = mock_opensearch_client.bulk.call_args[1]["body"]
+        # Should have: history index action, history doc, main index action, main doc
+        index_actions = [op for op in body if "index" in op]
+        history_actions = [a for a in index_actions if a["index"]["_index"] == "test_docs_history"]
+        assert len(history_actions) == 1
+
+    def test_history_skips_when_checksum_unchanged(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = self._make_history_settings()
+        client = FsCrawlerClient(settings)
+
+        # Existing doc has same checksum
+        mock_opensearch_client.get.return_value = {
+            "_source": {
+                "file": {"checksum": "same_hash"},
+                "path": {"virtual": "/test.txt"},
+            }
+        }
+
+        indexer = BulkIndexer(client, settings)
+        doc = make_document("/data/test.txt")
+        doc.file.checksum = "same_hash"
+        indexer.add(doc)
+        indexer.flush()
+
+        # Should still index (update in-place) but no history entry
+        body = mock_opensearch_client.bulk.call_args[1]["body"]
+        index_actions = [op for op in body if "index" in op]
+        history_actions = [a for a in index_actions if a["index"]["_index"] == "test_docs_history"]
+        assert len(history_actions) == 0
+
+    def test_history_not_written_when_keep_history_false(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 100})
+        client = FsCrawlerClient(settings)
+        indexer = BulkIndexer(client, settings)
+
+        doc = make_document("/data/test.txt")
+        doc.file.checksum = "new_hash"
+        indexer.add(doc)
+        indexer.flush()
+
+        # get should never be called when history is off
+        mock_opensearch_client.get.assert_not_called()
+
+    def test_history_on_delete(self, mock_opensearch_client: MagicMock) -> None:
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = self._make_history_settings()
+        client = FsCrawlerClient(settings)
+
+        mock_opensearch_client.get.return_value = {
+            "_source": {
+                "file": {"checksum": "old_hash", "filename": "test.txt"},
+                "path": {"virtual": "/test.txt"},
+                "content": "old content",
+            }
+        }
+
+        indexer = BulkIndexer(client, settings)
+        indexer.delete("/test.txt")
+        indexer.flush()
+
+        body = mock_opensearch_client.bulk.call_args[1]["body"]
+        # Should have: history index action, history doc, delete action
+        index_actions = [op for op in body if "index" in op]
+        history_actions = [a for a in index_actions if a["index"]["_index"] == "test_docs_history"]
+        assert len(history_actions) == 1
+        delete_actions = [op for op in body if "delete" in op]
+        assert len(delete_actions) == 1
 
 
 class TestIndexerContextManager:
