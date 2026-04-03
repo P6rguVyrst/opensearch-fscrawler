@@ -12,24 +12,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Content-addressed document IDs: `_id` is now SHA256 of the virtual path, replacing filename-based IDs
 - Always compute content checksums (default algorithm: `sha256`), stored in `file.checksum`
-- Optional document version history via `keep_history: true` — archives superseded documents to `{name}_docs_history` index with `superseded_date` and `superseded_by` metadata
-- New `index_history` elasticsearch setting (auto-derived as `{name}_docs_history`)
-- History index template with `superseded_date` (date) and `superseded_by` (keyword) fields
+- Optional document version history via `keep_history: true` — archives superseded documents to a history index with `superseded_date` and `superseded_by` metadata
+- Top-level `@timestamp` field in document mapping for OpenSearch Dashboards Discovery compatibility
+- Path hierarchy analyzer with `leading_slash` char_filter — strips leading `/` from path tokens so tickers like `AAPL` are searchable without the prefix
 
 ### Fixed
 - REST upload endpoint (`POST /_document`) now uses SHA256 hash as document ID instead of raw filename, matching the content-addressed ID strategy
 - REST delete endpoint (`DELETE /_document?filename=`) now hashes the filename to match content-addressed document IDs
-- Watcher `on_deleted` handler now respects `remove_deleted: false` setting, allowing indexed data to persist after source files are removed from the filesystem
+- Watcher `on_deleted` handler now respects `remove_deleted: false` setting
+- Watcher `_index` now guards against `IsADirectoryError` when watchdog misreports directory events as file events
 
 ### Changed
+- **Breaking:** Index naming convention changed from `{job}_docs` / `{job}_folder` to `fscrawler_docs_{job}` / `fscrawler_folders_{job}` / `fscrawler_history_{job}`
 - **Breaking:** Default document ID strategy changed from filename to SHA256 of virtual path
 - **Breaking:** `checksum` setting default changed from `null` to `"sha256"` — checksums are always computed
-- **Breaking:** `remove_deleted` default changed from `true` to `false` — deletion is now opt-in, supporting use cases where the filesystem is a transient staging area and the index is the system of record
+- **Breaking:** `remove_deleted` default changed from `true` to `false` — deletion is now opt-in
 - **Breaking:** Removed `filename_as_id` and `content_hash_as_id` settings
+- Index templates refactored: all template bodies moved to `src/fscrawler/_templates/*.json`, eliminating inline JSON from Python code
+- Shared component templates created once per cluster instead of duplicated per index (54 → 11 API calls)
+- Index templates use wildcard patterns (`fscrawler_docs_*`) — only 3 index templates needed regardless of job count
 
 ### Removed
 - `filename_as_id` setting (superseded by content-addressed ID strategy)
 - `content_hash_as_id` setting (superseded by content-addressed ID strategy)
+- Per-index component template duplication — all indices now share the same 8 component templates
 
 ## [0.2.1] - 2026-04-03
 
