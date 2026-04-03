@@ -89,7 +89,6 @@ def sample_settings_dict() -> dict[str, Any]:
             "remove_deleted": True,
             "continue_on_error": False,
             "ignore_above": "512mb",
-            "filename_as_id": True,
             "index_content": True,
             "add_filesize": True,
             "attributes_support": False,

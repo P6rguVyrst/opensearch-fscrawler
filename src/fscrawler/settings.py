@@ -96,7 +96,6 @@ class FsConfig:
     remove_deleted: bool = True
     continue_on_error: bool = False
     ignore_above: int | None = None  # bytes; None = no limit
-    filename_as_id: bool = True
     index_content: bool = True
     add_filesize: bool = True
     attributes_support: bool = False
@@ -104,10 +103,10 @@ class FsConfig:
     store_source: bool = False
     indexed_chars: int = 100000
     raw_metadata: bool = False
-    checksum: str | None = None
+    checksum: str = "sha256"
     index_folders: bool = True
     tika_url: str = "http://localhost:9998"
-    content_hash_as_id: bool = False
+    keep_history: bool = False
 
 
 @dataclass
@@ -121,6 +120,7 @@ class ElasticsearchSettings:
     ssl_verification: bool = True
     index: str = ""  # will be set to "{name}_docs" if empty
     index_folder: str = ""  # will be set to "{name}_folder" if empty
+    index_history: str = ""  # will be set to "{name}_docs_history" if empty
     bulk_size: int = 100
     byte_size: int = 10 * 1024 * 1024  # 10mb
     push_templates: bool = True
@@ -172,7 +172,6 @@ def _apply_env_to_raw(raw: dict[str, Any], env: dict[str, str]) -> None:
         ("FSCRAWLER_REST_URL", "rest", "url"),
         ("FSCRAWLER_FS_URL", "fs", "url"),
         ("FSCRAWLER_FS_TIKA_URL", "fs", "tika_url"),
-        ("FSCRAWLER_FS_CONTENT_HASH_AS_ID", "fs", "content_hash_as_id"),
     ]:
         if v := env.get(env_key):
             _setdefault_nested(raw, section, field_name, v)
@@ -180,6 +179,7 @@ def _apply_env_to_raw(raw: dict[str, Any], env: dict[str, str]) -> None:
     for env_key, section, field_name in [
         ("FSCRAWLER_ELASTICSEARCH_SSL_VERIFICATION", "elasticsearch", "ssl_verification"),
         ("FSCRAWLER_REST_ENABLE_CORS", "rest", "enable_cors"),
+        ("FSCRAWLER_FS_KEEP_HISTORY", "fs", "keep_history"),
     ]:
         if v := env.get(env_key):
             _setdefault_nested(raw, section, field_name, v.lower() not in ("false", "0", "no"))
@@ -227,8 +227,6 @@ class FsSettings:
             fs.continue_on_error = bool(fs_data["continue_on_error"])
         if "ignore_above" in fs_data:
             fs.ignore_above = parse_byte_size(str(fs_data["ignore_above"]))
-        if "filename_as_id" in fs_data:
-            fs.filename_as_id = bool(fs_data["filename_as_id"])
         if "index_content" in fs_data:
             fs.index_content = bool(fs_data["index_content"])
         if "add_filesize" in fs_data:
@@ -245,13 +243,13 @@ class FsSettings:
             fs.raw_metadata = bool(fs_data["raw_metadata"])
         if "checksum" in fs_data:
             val = fs_data["checksum"]
-            fs.checksum = val if val else None
+            fs.checksum = str(val) if val else "sha256"
+        if "keep_history" in fs_data:
+            fs.keep_history = bool(fs_data["keep_history"])
         if "index_folders" in fs_data:
             fs.index_folders = bool(fs_data["index_folders"])
         if "tika_url" in fs_data:
             fs.tika_url = str(fs_data["tika_url"])
-        if "content_hash_as_id" in fs_data:
-            fs.content_hash_as_id = bool(fs_data["content_hash_as_id"])
 
         # --- elasticsearch ---
         es_data: dict[str, Any] = data.get("elasticsearch") or {}
@@ -280,6 +278,8 @@ class FsSettings:
             es.index = es_data["index"]
         if "index_folder" in es_data and es_data["index_folder"]:
             es.index_folder = es_data["index_folder"]
+        if "index_history" in es_data and es_data["index_history"]:
+            es.index_history = es_data["index_history"]
         if "bulk_size" in es_data:
             es.bulk_size = int(es_data["bulk_size"])
 
@@ -293,6 +293,8 @@ class FsSettings:
             es.index = f"{name}_docs"
         if not es.index_folder:
             es.index_folder = f"{name}_folder"
+        if not es.index_history:
+            es.index_history = f"{name}_docs_history"
 
         # Trigger __post_init__ warning after all fields are set
         if es.api_key and (es.username or es.password):
