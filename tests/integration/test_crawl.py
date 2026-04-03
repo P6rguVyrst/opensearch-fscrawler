@@ -14,6 +14,7 @@ import os
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -193,6 +194,3 @@ class TestFullCrawl:
         )["hits"]["total"]["value"]
         assert count2 == 1, f"Expected 1 document after deletion, got {count2}"
 
-
-# Type hint needed for the fixture
-from typing import Any  # noqa: E402
