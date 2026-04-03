@@ -147,7 +147,7 @@ _TEXT_FORMATTER = logging.Formatter(
 class _OtlpHttpHandler(logging.Handler):
     """Sends log records to an OTLP/HTTP endpoint using the JSON encoding.
 
-    Each ``emit()`` call fires a synchronous POST to ``{endpoint}/v1/logs``.
+    Uses a persistent ``httpx.Client`` for connection reuse (HTTP keep-alive).
     Failures are handled by :meth:`logging.Handler.handleError` (prints to
     stderr) so that a broken collector never silences application logs.
 
@@ -157,6 +157,14 @@ class _OtlpHttpHandler(logging.Handler):
     def __init__(self, endpoint: str) -> None:
         super().__init__()
         self._url = endpoint.rstrip("/") + "/v1/logs"
+        self._client = httpx.Client(timeout=5)
+
+    def close(self) -> None:
+        """Close the underlying HTTP client when the handler is removed."""
+        try:
+            self._client.close()
+        finally:
+            super().close()
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -205,7 +213,7 @@ class _OtlpHttpHandler(logging.Handler):
             ]
         }
         body = json.dumps(payload).encode()
-        httpx.post(self._url, content=body, headers={"Content-Type": "application/json"}, timeout=5)
+        self._client.post(self._url, content=body, headers={"Content-Type": "application/json"})
 
 
 # ---------------------------------------------------------------------------
