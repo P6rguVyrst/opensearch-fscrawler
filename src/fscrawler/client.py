@@ -156,8 +156,15 @@ class FsCrawlerClient:
             else:
                 self._client.indices.get_index_template(name=name)
             return True
-        except Exception:
-            return False
+        except Exception as exc:
+            # Only treat "not found" responses as template-missing.
+            # Re-raise auth errors, network errors, etc.
+            if hasattr(exc, "status_code") and exc.status_code == 404:
+                return False
+            # opensearch-py raises generic Exception with "resource_not_found" message
+            if "resource_not_found" in str(exc).lower() or "index_template_missing" in str(exc).lower():
+                return False
+            raise
 
     def _put_component_template(
         self, name: str, body: dict[str, Any], force: bool = False

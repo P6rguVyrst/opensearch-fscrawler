@@ -372,3 +372,25 @@ class TestIndexManagement:
         client = FsCrawlerClient(settings)
         client.delete_document("test_docs", "doc1")
         mock_opensearch_client.delete.assert_called_once_with(index="test_docs", id="doc1")
+
+
+# ---------------------------------------------------------------------------
+# _template_exists error handling
+# ---------------------------------------------------------------------------
+
+
+class TestTemplateExistsErrorHandling:
+    def test_auth_error_propagates_from_template_check(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from opensearchpy.exceptions import AuthenticationException
+
+        from fscrawler.client import FsCrawlerClient
+
+        settings = make_settings()
+        client = FsCrawlerClient(settings)
+        mock_opensearch_client.cluster.get_component_template.side_effect = (
+            AuthenticationException(401, "Unauthorized")
+        )
+        with pytest.raises(AuthenticationException):
+            client.push_templates()
