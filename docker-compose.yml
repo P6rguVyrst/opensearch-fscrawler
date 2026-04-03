@@ -73,7 +73,7 @@ services:
       - ./playground/data:/data
     ports:
       - "8080:8080"
-    command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "markdown"]
+    command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "--", "markdown"]
 
   fscrawler-pdf:
     build:
@@ -90,7 +90,7 @@ services:
       - ./playground/data:/data
     ports:
       - "8081:8081"
-    command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "pdf"]
+    command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "--", "pdf"]
 
   fscrawler-catchall:
     build:
@@ -107,7 +107,7 @@ services:
       - ./playground/data:/data
     ports:
       - "8082:8082"
-    command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "catchall"]
+    command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "--", "catchall"]
 
 volumes:
   opensearch-data:
