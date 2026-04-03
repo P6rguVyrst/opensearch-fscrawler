@@ -94,8 +94,7 @@ class Document:
         from dataclasses import asdict
 
         file_dict = {k: v for k, v in asdict(self.file).items() if v is not None}
-        if self.content is not None:
-            file_dict["indexed_chars"] = len(self.content)
+        file_dict["indexed_chars"] = len(self.content) if self.content is not None else 0
 
         result: dict[str, Any] = {
             "file": file_dict,
