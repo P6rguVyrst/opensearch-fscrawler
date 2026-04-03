@@ -137,7 +137,8 @@ class BulkIndexer:
         try:
             existing = self._client.get_document_source(self._index, doc_id)
         except Exception:
-            return  # document doesn't exist yet — nothing to archive
+            logger.debug("Cannot retrieve existing doc %s for history — skipping", doc_id)
+            return
 
         if existing is None:
             return

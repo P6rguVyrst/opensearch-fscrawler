@@ -26,7 +26,13 @@ logger = logging.getLogger("fscrawler.watcher")
 
 
 class FsEventHandler(FileSystemEventHandler):
-    """Handle filesystem events by indexing or deleting the affected file."""
+    """Handle filesystem events by indexing or deleting the affected file.
+
+    Note: This handler calls client.index/delete directly (single-document ops),
+    bypassing BulkIndexer. As a result, keep_history archival is not triggered
+    for watchdog events — only the batch crawl path (via BulkIndexer) supports
+    history. This is a known limitation.
+    """
 
     def __init__(
         self,
