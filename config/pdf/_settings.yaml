@@ -1,0 +1,27 @@
+---
+# Index PDF documents only
+name: "pdf"
+fs:
+  url: "/data"
+
+  includes:
+    - "*.pdf"
+  excludes: []
+  follow_symlinks: false
+  remove_deleted: true
+  continue_on_error: false
+  index_content: true
+  add_filesize: true
+  index_folders: true
+  checksum: "MD5"
+  tika_url: "http://tika:9998"
+elasticsearch:
+  nodes:
+    - url: "http://opensearch:9200"
+  ssl_verification: false
+  bulk_size: 100
+  byte_size: "10mb"
+  push_templates: true
+rest:
+  url: "http://0.0.0.0:8081"
+  enable_cors: false

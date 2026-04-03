@@ -41,10 +41,6 @@ USER fscrawler
 # Match Java image working directory
 WORKDIR /home/fscrawler
 
-# Config dir is mounted at /home/fscrawler/.fscrawler
-# Data dir is mounted at /data
-VOLUME ["/home/fscrawler/.fscrawler", "/data"]
-
 # Honour the same env var the Java image convention uses for config location
 ENV FSCRAWLER_CONFIG_DIR=/home/fscrawler/.fscrawler
 

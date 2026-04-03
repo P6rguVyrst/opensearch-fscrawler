@@ -36,7 +36,6 @@ def sample_settings_dict() -> dict[str, Any]:
         "name": "test",
         "fs": {
             "url": "/tmp/testdata",
-            "update_rate": "15m",
             "includes": ["*.pdf", "*.doc"],
             "excludes": ["*.tmp"],
             "json_support": False,

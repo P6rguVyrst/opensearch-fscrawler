@@ -38,7 +38,6 @@ def integration_settings(tmp_path: Path) -> Any:
             "name": job_name,
             "fs": {
                 "url": str(data_dir),
-                "update_rate": "1s",
                 "index_content": True,
                 "remove_deleted": True,
             },
