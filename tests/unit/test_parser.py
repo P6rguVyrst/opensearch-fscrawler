@@ -242,3 +242,27 @@ class TestChecksumAlwaysComputed:
 
         expected = hashlib.md5(b"hello world").hexdigest()  # noqa: S324
         assert doc.file.checksum == expected
+
+    def test_unknown_algorithm_falls_back_to_sha256(
+        self, tmp_path: Path, mock_tika: Any, caplog: Any
+    ) -> None:
+        """Unknown algorithm falls back to sha256 with a warning."""
+        import hashlib
+        import logging
+
+        from tests.conftest import make_settings
+
+        from fscrawler.parser import TikaParser
+
+        settings = make_settings(fs={"url": str(tmp_path), "checksum": "bogus_algo"})
+        parser = TikaParser(settings, tika_url="http://localhost:9998")
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello world")
+
+        with caplog.at_level(logging.WARNING, logger="fscrawler.parser"):
+            doc = parser.parse(test_file)
+
+        expected = hashlib.sha256(b"hello world").hexdigest()
+        assert doc.file.checksum == expected
+        assert "falling back to sha256" in caplog.text
