@@ -648,3 +648,78 @@ class TestSpecialFileDetection:
             assert "my_socket" not in found
         finally:
             srv.close()
+
+
+# ---------------------------------------------------------------------------
+# Clock skew tolerance (Task 6)
+# ---------------------------------------------------------------------------
+
+
+class TestClockSkewTolerance:
+    def test_file_within_skew_window_is_recrawled(self, tmp_path: Path) -> None:
+        """A file whose mtime drifted back by <2s should still be considered modified."""
+        data = tmp_path / "data"
+        data.mkdir()
+        file_path = data / "file.txt"
+        file_path.write_bytes(b"original")
+
+        settings = make_settings(tmp_path)
+        from fscrawler.crawler import LocalCrawler
+
+        # First run — establish checkpoint
+        c1 = LocalCrawler(settings, config_dir=tmp_path)
+        list(c1.scan())
+        c1.save_checkpoint()
+
+        stored_mtime = file_path.stat().st_mtime
+        # Simulate clock drift: set mtime to 1 second BEFORE the stored value
+        drifted_mtime = stored_mtime - 1.0
+        os.utime(file_path, (drifted_mtime, drifted_mtime))
+
+        # Second run — file should be detected as modified (within 2s skew window)
+        c2 = LocalCrawler(settings, config_dir=tmp_path)
+        result = [f for f in c2.scan() if c2.is_new_or_modified(f)]
+        assert len(result) == 1
+        assert result[0].name == "file.txt"
+
+    def test_file_well_before_skew_window_not_recrawled(self, tmp_path: Path) -> None:
+        """A file whose mtime is >2s before stored should NOT be considered modified."""
+        data = tmp_path / "data"
+        data.mkdir()
+        file_path = data / "file.txt"
+        file_path.write_bytes(b"original")
+
+        settings = make_settings(tmp_path)
+        from fscrawler.crawler import LocalCrawler
+
+        c1 = LocalCrawler(settings, config_dir=tmp_path)
+        list(c1.scan())
+        c1.save_checkpoint()
+
+        stored_mtime = file_path.stat().st_mtime
+        # Set mtime to 5 seconds BEFORE the stored value — outside skew window
+        old_mtime = stored_mtime - 5.0
+        os.utime(file_path, (old_mtime, old_mtime))
+
+        c2 = LocalCrawler(settings, config_dir=tmp_path)
+        result = [f for f in c2.scan() if c2.is_new_or_modified(f)]
+        assert len(result) == 0
+
+    def test_unchanged_file_not_recrawled(self, tmp_path: Path) -> None:
+        """A file with exactly the same mtime should NOT be recrawled."""
+        data = tmp_path / "data"
+        data.mkdir()
+        file_path = data / "file.txt"
+        file_path.write_bytes(b"original")
+
+        settings = make_settings(tmp_path)
+        from fscrawler.crawler import LocalCrawler
+
+        c1 = LocalCrawler(settings, config_dir=tmp_path)
+        list(c1.scan())
+        c1.save_checkpoint()
+
+        # Don't touch the file — mtime stays the same
+        c2 = LocalCrawler(settings, config_dir=tmp_path)
+        result = [f for f in c2.scan() if c2.is_new_or_modified(f)]
+        assert len(result) == 0

@@ -17,6 +17,7 @@ logger = logging.getLogger("fscrawler.crawler")
 
 _CHECKPOINT_FILENAME = ".fscrawler_checkpoint.json"
 _IGNORE_SENTINEL = ".fscrawlerignore"
+_CLOCK_SKEW_SECONDS = 2.0
 
 
 def _matches_pattern(name: str, virtual_path: str, pattern: str) -> bool:
@@ -225,3 +226,16 @@ class LocalCrawler:
                     continue
 
                 yield entry.path
+            else:
+                # Detect special files (pipes, sockets, devices) and warn
+                try:
+                    mode = entry.stat(follow_symlinks=fs.follow_symlinks).st_mode
+                except OSError:
+                    continue
+                if (
+                    stat_module.S_ISFIFO(mode)
+                    or stat_module.S_ISSOCK(mode)
+                    or stat_module.S_ISBLK(mode)
+                    or stat_module.S_ISCHR(mode)
+                ):
+                    logger.warning("Skipping special file: %s", entry.path)
