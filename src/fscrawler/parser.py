@@ -147,7 +147,7 @@ class TikaParser:
             checksum = hasher.hexdigest()
             # Send file to Tika via streaming
             with open(file_path, "rb") as fh:
-                tika_meta = self._call_tika_stream(fh)
+                tika_meta = self._call_tika(fh)
 
         # ------------------------------------------------------------------
         # Content-Type
@@ -334,39 +334,19 @@ class TikaParser:
 
         return Document(content=content, file=file_info, path=path_info, meta=meta)
 
-    def _call_tika(self, raw_bytes: bytes) -> dict[str, Any]:
-        """POST file content to Tika's /rmeta/text endpoint and return parsed metadata."""
-        url = f"{self._tika_url}/rmeta/text"
-        headers = {
-            "Accept": "application/json",
-        }
-        try:
-            with httpx.Client(timeout=30.0) as client:
-                response = client.put(url, content=raw_bytes, headers=headers)
-                response.raise_for_status()
-                data = response.json()
-                # /rmeta returns a list of metadata objects; use the first
-                if isinstance(data, list) and data:
-                    return data[0]  # type: ignore[no-any-return]
-                return data  # type: ignore[no-any-return]
-        except httpx.ConnectError as exc:
-            raise TikaUnavailableError(
-                f"Cannot connect to Tika server at {self._tika_url}: {exc}"
-            ) from exc
-        except httpx.HTTPStatusError as exc:
-            raise TikaUnavailableError(
-                f"Tika server returned error {exc.response.status_code}"
-            ) from exc
+    def _call_tika(self, content: Any) -> dict[str, Any]:
+        """Send content to Tika's /rmeta/text endpoint and return parsed metadata.
 
-    def _call_tika_stream(self, file_obj: Any) -> dict[str, Any]:
-        """Send file content to Tika via streaming upload."""
+        Accepts bytes (small files) or a file-like object (streaming).
+        """
         url = f"{self._tika_url}/rmeta/text"
         headers = {"Accept": "application/json"}
         try:
             with httpx.Client(timeout=30.0) as client:
-                response = client.put(url, content=file_obj, headers=headers)
+                response = client.put(url, content=content, headers=headers)
                 response.raise_for_status()
                 data = response.json()
+                # /rmeta returns a list of metadata objects; use the first
                 if isinstance(data, list) and data:
                     return data[0]  # type: ignore[no-any-return]
                 return data  # type: ignore[no-any-return]
