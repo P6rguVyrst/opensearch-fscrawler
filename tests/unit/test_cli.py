@@ -126,7 +126,7 @@ class TestRestMode:
             patch("fscrawler.cli.create_app", return_value=MagicMock()),
             patch("fscrawler.cli.threading"),
         ):
-            result = CliRunner().invoke(
+            _result = CliRunner().invoke(
                 main, ["--config_dir", str(tmp_path), "--rest", "test-job"]
             )
         assert mock_uvicorn.run.called
@@ -426,7 +426,7 @@ class TestObserverRestart:
 
     def test_observer_restarted_when_it_dies(self, tmp_path: Path) -> None:
         """Observer.start() should be called more than once when observer dies."""
-        from fscrawler.cli import _crawler_loop, _MAX_OBSERVER_RESTARTS
+        from fscrawler.cli import _MAX_OBSERVER_RESTARTS, _crawler_loop
 
         settings = _mock_settings()
         client = MagicMock()
@@ -452,7 +452,7 @@ class TestObserverRestart:
 
     def test_observer_gives_up_after_max_restarts(self, tmp_path: Path) -> None:
         """After _MAX_OBSERVER_RESTARTS, the loop should exit."""
-        from fscrawler.cli import _crawler_loop, _MAX_OBSERVER_RESTARTS
+        from fscrawler.cli import _MAX_OBSERVER_RESTARTS, _crawler_loop
 
         settings = _mock_settings()
         client = MagicMock()
@@ -477,10 +477,9 @@ class TestObserverRestart:
 
     def test_observer_no_restart_when_alive(self, tmp_path: Path) -> None:
         """If observer stays alive, no restarts should happen."""
-        from fscrawler.cli import _crawler_loop
 
-        settings = _mock_settings()
-        client = MagicMock()
+        _settings = _mock_settings()
+        _client = MagicMock()
         crawler_state = MagicMock()
         crawler_state.paused = False
 

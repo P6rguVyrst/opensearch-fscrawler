@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-04
+
 ### Added
 - **Full virtual path matching:** Include/exclude patterns containing `/` now match against the full virtual path instead of filename only, fixing silent misses with upstream configs using path patterns. ([upstream context](https://github.com/dadoonet/fscrawler/issues/1300))
 - **Default excludes:** Tilde-prefixed editor temp files (`~*`) are now excluded by default, matching Java upstream behavior.

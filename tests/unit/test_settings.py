@@ -6,7 +6,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-import yaml
 
 from fscrawler.settings import (
     ElasticsearchSettings,
@@ -16,7 +15,6 @@ from fscrawler.settings import (
     parse_duration,
     parse_indexed_chars,
 )
-
 
 # ---------------------------------------------------------------------------
 # parse_duration

@@ -7,9 +7,6 @@ import os
 import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
-
-import pytest
 
 from fscrawler.settings import FsSettings
 
@@ -398,8 +395,9 @@ class TestScanFolders:
         data.mkdir()
 
         settings = make_settings(tmp_path)
-        from fscrawler.crawler import LocalCrawler
         from pathlib import Path as _Path
+
+        from fscrawler.crawler import LocalCrawler
 
         crawler = LocalCrawler(settings, config_dir=tmp_path)
         folders = list(crawler.scan_folders())

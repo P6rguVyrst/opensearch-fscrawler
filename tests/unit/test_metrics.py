@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import fscrawler.metrics as metrics_mod
 import pytest
+
+import fscrawler.metrics as metrics_mod
 
 
 @pytest.fixture(autouse=True)
@@ -78,7 +79,7 @@ class TestHistogramBucketBoundaries:
         """I2: bulk_duration histogram must use the OTel database convention boundaries."""
         from fscrawler.metrics import BULK_DURATION_BOUNDARIES
         expected = [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10]
-        assert BULK_DURATION_BOUNDARIES == expected
+        assert expected == BULK_DURATION_BOUNDARIES
 
 
 class TestGetPrometheusApp:

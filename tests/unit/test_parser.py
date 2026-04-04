@@ -207,9 +207,8 @@ class TestChecksumAlwaysComputed:
         """With default settings (checksum='sha256'), checksum is always set."""
         import hashlib
 
-        from tests.conftest import make_settings
-
         from fscrawler.parser import TikaParser
+        from tests.conftest import make_settings
 
         settings = make_settings()
         parser = TikaParser(settings, tika_url="http://localhost:9998")
@@ -228,9 +227,8 @@ class TestChecksumAlwaysComputed:
         """When checksum is set to MD5, use MD5."""
         import hashlib
 
-        from tests.conftest import make_settings
-
         from fscrawler.parser import TikaParser
+        from tests.conftest import make_settings
 
         settings = make_settings(fs={"url": str(tmp_path), "checksum": "MD5"})
         parser = TikaParser(settings, tika_url="http://localhost:9998")
@@ -250,9 +248,8 @@ class TestChecksumAlwaysComputed:
         import hashlib
         import logging
 
-        from tests.conftest import make_settings
-
         from fscrawler.parser import TikaParser
+        from tests.conftest import make_settings
 
         settings = make_settings(fs={"url": str(tmp_path), "checksum": "bogus_algo"})
         parser = TikaParser(settings, tika_url="http://localhost:9998")
@@ -332,7 +329,7 @@ class TestLargeFileStreaming:
     """Stream large files to prevent OOM."""
 
     def test_large_file_uses_streaming_path(self, tmp_path: Path) -> None:
-        from fscrawler.parser import TikaParser, _STREAMING_THRESHOLD
+        from fscrawler.parser import _STREAMING_THRESHOLD, TikaParser
 
         data = tmp_path / "data"
         data.mkdir(parents=True)
@@ -385,7 +382,7 @@ class TestLargeFileStreaming:
         """Streaming and in-memory checksum computation must produce identical results."""
         import hashlib
 
-        from fscrawler.parser import TikaParser, _STREAMING_THRESHOLD
+        from fscrawler.parser import _STREAMING_THRESHOLD, TikaParser
 
         data = tmp_path / "data"
         data.mkdir(parents=True)

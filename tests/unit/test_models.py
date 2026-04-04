@@ -5,9 +5,8 @@ from __future__ import annotations
 import base64
 import hashlib
 
-from tests.conftest import make_document
-
 from fscrawler.models import FolderDocument, PathInfo
+from tests.conftest import make_document
 
 
 class TestMakeDocId:
@@ -15,7 +14,7 @@ class TestMakeDocId:
         from fscrawler.models import make_doc_id
 
         result = make_doc_id("/test.txt")
-        expected = hashlib.sha256("/test.txt".encode()).hexdigest()
+        expected = hashlib.sha256(b"/test.txt").hexdigest()
         assert result == expected
 
     def test_deterministic_for_same_path(self) -> None:

@@ -19,8 +19,6 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from fscrawler.settings import FsSettings
 from fscrawler.templates import get_component_templates, get_index_templates
 

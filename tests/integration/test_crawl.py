@@ -67,7 +67,7 @@ def integration_settings(tmp_path: Path) -> Any:
             settings.elasticsearch.index_folder,
         ]:
             os_client.indices.delete(index=idx, ignore=[404])
-    except Exception:
+    except Exception:  # noqa: S110
         pass
 
 

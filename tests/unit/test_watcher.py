@@ -4,16 +4,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from tests.conftest import make_settings
 
 
 def make_handler(settings=None, paused=False):
-    from fscrawler.watcher import FsEventHandler
     from fscrawler.rest_server import CrawlerState
+    from fscrawler.watcher import FsEventHandler
 
     s = settings or make_settings()
     client = MagicMock()
@@ -174,7 +172,7 @@ class TestWatcherNewId:
         # Verify the doc_id passed to client.index is SHA256 of virtual path
         mock_client.index.assert_called_once()
         call_kwargs = mock_client.index.call_args[1]
-        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/test.txt").hexdigest()
         assert call_kwargs["doc_id"] == expected_id
 
     def test_delete_uses_virtual_path(self) -> None:
@@ -193,7 +191,7 @@ class TestWatcherNewId:
         handler = FsEventHandler(settings, mock_client, mock_parser, mock_state)
         handler._delete("/data/test.txt")
 
-        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/test.txt").hexdigest()
         call_kwargs = mock_client.delete.call_args[1]
         assert call_kwargs["doc_id"] == expected_id
 
@@ -312,7 +310,6 @@ class TestFsEventHandlerWalDlq:
 
     def test_delete_early_exception_uses_fallback_doc_id(self) -> None:
         """B1: If _delete() fails before doc_id is assigned, use a fallback ID for DLQ."""
-        import hashlib
 
         mock_wal = MagicMock()
         handler, client, parser, mock_doc = self._make_handler(wal=mock_wal)

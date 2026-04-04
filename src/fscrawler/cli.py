@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
+    from watchdog.observers.api import BaseObserver
+
     from fscrawler.client import FsCrawlerClient
     from fscrawler.parser import TikaParser
     from fscrawler.settings import FsSettings
@@ -37,7 +39,7 @@ _MAX_OBSERVER_RESTARTS = 5
 def _watch_with_restarts(
     handler: Any,
     path: str,
-    observer: Observer,
+    observer: BaseObserver,
     stop_event: threading.Event | None = None,
 ) -> None:
     """Monitor a watchdog Observer and restart it up to _MAX_OBSERVER_RESTARTS times.

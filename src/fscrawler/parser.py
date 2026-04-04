@@ -126,7 +126,7 @@ class TikaParser:
 
         if file_size <= _STREAMING_THRESHOLD:
             # Small file: read entirely into memory
-            raw_bytes: bytes | None = file_path.read_bytes()
+            raw_bytes = file_path.read_bytes()
             try:
                 checksum = hashlib.new(algo, raw_bytes).hexdigest()
             except ValueError:
