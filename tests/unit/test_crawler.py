@@ -122,7 +122,8 @@ class TestCrawlerFilters:
 
 
 class TestCrawlerIgnoreAbove:
-    def test_skips_files_above_limit(self, tmp_path: Path) -> None:
+    def test_large_files_still_yielded_but_flagged(self, tmp_path: Path) -> None:
+        """Files above ignore_above are yielded from scan() but flagged by exceeds_size_limit()."""
         data = tmp_path / "data"
         data.mkdir()
         small = data / "small.txt"
@@ -137,7 +138,9 @@ class TestCrawlerIgnoreAbove:
         crawler = LocalCrawler(settings, config_dir=tmp_path)
         found = [f.name for f in crawler.scan()]
         assert "small.txt" in found
-        assert "big.txt" not in found
+        assert "big.txt" in found
+        assert crawler.exceeds_size_limit(big) is True
+        assert crawler.exceeds_size_limit(small) is False
 
     def test_includes_files_at_limit(self, tmp_path: Path) -> None:
         data = tmp_path / "data"
@@ -775,3 +778,49 @@ class TestUnicodeNormalization:
         crawler2 = LocalCrawler(settings, config_dir=tmp_path)
         result = [f for f in crawler2.scan() if crawler2.is_new_or_modified(f)]
         assert len(result) == 0
+
+
+# ---------------------------------------------------------------------------
+# ignore_above metadata-only indexing (Task 10)
+# ---------------------------------------------------------------------------
+
+
+class TestIgnoreAboveMetadataOnly:
+    """Files exceeding ignore_above should still be yielded from scan().
+
+    Upstream: https://github.com/dadoonet/fscrawler/issues/1605
+    """
+
+    def test_large_file_still_yielded_from_scan(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        (data / "small.txt").write_bytes(b"small")
+        (data / "big.txt").write_bytes(b"x" * 1000)
+        settings = make_settings(tmp_path, ignore_above="500b")
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = sorted(p.name for p in crawler.scan())
+        assert found == ["big.txt", "small.txt"]
+
+    def test_exceeds_size_limit(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        (data / "small.txt").write_bytes(b"small")
+        (data / "big.txt").write_bytes(b"x" * 1000)
+        settings = make_settings(tmp_path, ignore_above="500b")
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        assert crawler.exceeds_size_limit(data / "big.txt") is True
+        assert crawler.exceeds_size_limit(data / "small.txt") is False
+
+    def test_no_limit_means_nothing_exceeds(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        (data / "big.txt").write_bytes(b"x" * 1000)
+        settings = make_settings(tmp_path)  # no ignore_above
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        assert crawler.exceeds_size_limit(data / "big.txt") is False

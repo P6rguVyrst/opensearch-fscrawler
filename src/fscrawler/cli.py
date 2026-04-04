@@ -370,7 +370,10 @@ def _crawl_once(
         for file_path in crawler.scan():
             if crawler.is_new_or_modified(file_path):
                 try:
-                    doc = parser.parse(file_path)
+                    if crawler.exceeds_size_limit(file_path):
+                        doc = parser.parse_metadata_only(file_path)
+                    else:
+                        doc = parser.parse(file_path)
                     indexer.add(doc)
                 except Exception as exc:
                     if settings.fs.continue_on_error:

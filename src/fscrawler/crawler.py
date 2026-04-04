@@ -62,20 +62,9 @@ class LocalCrawler:
             self._visited.add((root_stat.st_dev, root_stat.st_ino))
         except OSError:
             pass
-        fs = self._settings.fs
 
         for entry in self._walk(self._root):
             path = Path(entry)
-
-            # Size guard
-            if fs.ignore_above is not None:
-                try:
-                    size = path.stat().st_size
-                    if size > fs.ignore_above:
-                        logger.debug("Ignoring %s (size %d > %d)", path, size, fs.ignore_above)
-                        continue
-                except OSError:
-                    continue
 
             # Record mtime for checkpointing
             try:
@@ -85,6 +74,15 @@ class LocalCrawler:
 
             self._current_checkpoint[unicodedata.normalize("NFC", str(path))] = mtime
             yield path
+
+    def exceeds_size_limit(self, path: Path) -> bool:
+        """Check if file exceeds ignore_above threshold."""
+        if self._settings.fs.ignore_above is None:
+            return False
+        try:
+            return path.stat().st_size > self._settings.fs.ignore_above
+        except OSError:
+            return False
 
     def is_new_or_modified(self, path: Path) -> bool:
         """Return True if the file is new or has been modified since the last checkpoint.
