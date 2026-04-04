@@ -3,11 +3,16 @@
 
 from __future__ import annotations
 
+import copy
+import json
 import logging
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("fscrawler.dlq")
+
+_QUERIES_DIR = Path(__file__).parent / "_queries"
 
 DLQ_INDEX = "fscrawler_dlq"
 PFQ_INDEX = "fscrawler_pfq"
@@ -84,3 +89,92 @@ def build_pfq_record(
     pfq["promoted_at"] = now.isoformat()
     pfq["final_error"] = final_error
     return pfq
+
+
+def run_retry_cycle(
+    client: Any,
+    config: Any,
+    job_name: str | None = None,
+) -> None:
+    """Query DLQ for due records and retry each one."""
+    with open(_QUERIES_DIR / "dlq_due_records.json") as f:
+        query = json.load(f)
+
+    query = copy.deepcopy(query)
+
+    if job_name is not None:
+        query["query"]["bool"]["filter"].append(
+            {"term": {"job_name": job_name}}
+        )
+
+    try:
+        result = client.search(index=DLQ_INDEX, body=query)
+    except Exception:
+        logger.exception("Failed to search DLQ for due records")
+        return
+
+    hits = result.get("hits", {}).get("hits", [])
+    for hit in hits:
+        dlq_doc_id = hit["_id"]
+        source = hit["_source"]
+        _retry_single_record(client, config, dlq_doc_id, source)
+
+
+def _retry_single_record(
+    client: Any,
+    config: Any,
+    dlq_doc_id: str,
+    source: dict[str, Any],
+) -> None:
+    """Attempt to re-index/delete a single DLQ record."""
+    doc_id = source["doc_id"]
+    job_name = source["job_name"]
+    retry_count = source["retry_count"]
+    target_index = source["target_index"]
+    action = source["action"]
+    payload = source.get("payload")
+    pipeline = source.get("pipeline", "")
+
+    try:
+        if action == "delete":
+            client.delete_document(index=target_index, doc_id=doc_id)
+        else:
+            bulk_action: dict[str, Any] = {"index": {"_index": target_index, "_id": doc_id}}
+            if pipeline:
+                bulk_action["index"]["pipeline"] = pipeline
+            client.bulk([bulk_action, payload])
+    except Exception as exc:
+        new_count = retry_count + 1
+        error_msg = str(exc)
+
+        if new_count >= config.max_retries:
+            pfq_record = build_pfq_record(source, final_error=error_msg)
+            pfq_doc_id = make_dlq_doc_id(job_name, doc_id)
+            client.index_raw(index=PFQ_INDEX, doc_id=pfq_doc_id, body=pfq_record)
+            client.delete_document(index=DLQ_INDEX, doc_id=dlq_doc_id)
+            logger.warning(
+                "Promoted %s to PFQ after %d retries: %s",
+                dlq_doc_id, new_count, error_msg,
+            )
+        else:
+            now = datetime.now(tz=UTC)
+            delay = calculate_next_retry_delay(
+                retry_count=new_count,
+                base=config.retry_interval,
+                multiplier=config.backoff_multiplier,
+                cap=config.max_backoff,
+            )
+            source["retry_count"] = new_count
+            source["last_retried"] = now.isoformat()
+            source["next_retry"] = (now + timedelta(seconds=delay)).isoformat()
+            source["error_message"] = error_msg
+            client.index_raw(index=DLQ_INDEX, doc_id=dlq_doc_id, body=source)
+            logger.info(
+                "Retry %d for %s failed, next retry in %ds: %s",
+                new_count, dlq_doc_id, delay, error_msg,
+            )
+        return
+
+    # Success: remove from DLQ
+    client.delete_document(index=DLQ_INDEX, doc_id=dlq_doc_id)
+    logger.info("Successfully retried %s, removed from DLQ", dlq_doc_id)
