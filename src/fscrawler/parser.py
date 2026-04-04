@@ -114,17 +114,42 @@ class TikaParser:
     def parse(self, file_path: Path) -> Document:
         """Parse a file and return a Document with extracted content and metadata."""
         fs = self._settings.fs
-        raw_bytes = file_path.read_bytes()
+        file_size = file_path.stat().st_size
 
-        if not raw_bytes:
+        if file_size == 0:
             logger.debug("Skipping zero-byte file: %s", file_path)
             raise ValueError(f"Cannot parse zero-byte file: {file_path}")
 
-        # ------------------------------------------------------------------
-        # Call Tika
-        # ------------------------------------------------------------------
-        tika_meta = self._call_tika(raw_bytes)
+        algo = fs.checksum.lower().replace("-", "")
 
+        if file_size <= _STREAMING_THRESHOLD:
+            # Small file: read entirely into memory
+            raw_bytes: bytes | None = file_path.read_bytes()
+            try:
+                checksum = hashlib.new(algo, raw_bytes).hexdigest()
+            except ValueError:
+                logger.warning("Unknown checksum algorithm %r, falling back to sha256", fs.checksum)
+                checksum = hashlib.sha256(raw_bytes).hexdigest()
+            tika_meta = self._call_tika(raw_bytes)
+        else:
+            # Large file: stream checksum computation
+            raw_bytes = None
+            try:
+                hasher = hashlib.new(algo)
+            except ValueError:
+                logger.warning("Unknown checksum algorithm %r, falling back to sha256", fs.checksum)
+                hasher = hashlib.sha256()
+            with open(file_path, "rb") as fh:
+                while chunk := fh.read(_STREAMING_THRESHOLD):
+                    hasher.update(chunk)
+            checksum = hasher.hexdigest()
+            # Send file to Tika via streaming
+            with open(file_path, "rb") as fh:
+                tika_meta = self._call_tika_stream(fh)
+
+        # ------------------------------------------------------------------
+        # Content-Type
+        # ------------------------------------------------------------------
         content_type = str(tika_meta.get("Content-Type", "application/octet-stream"))
         # Tika may return a list for Content-Type
         if isinstance(content_type, list):
@@ -151,14 +176,6 @@ class TikaParser:
         # ------------------------------------------------------------------
         stat = file_path.stat()
         now = datetime.now(tz=UTC).isoformat()
-
-        algo = fs.checksum.lower().replace("-", "")
-        try:
-            h = hashlib.new(algo, raw_bytes)
-            checksum = h.hexdigest()
-        except ValueError:
-            logger.warning("Unknown checksum algorithm %r, falling back to sha256", fs.checksum)
-            checksum = hashlib.sha256(raw_bytes).hexdigest()
 
         created: str | None = None
         with contextlib.suppress(AttributeError):
@@ -215,7 +232,7 @@ class TikaParser:
         # ------------------------------------------------------------------
         attachment: bytes | None = None
         if fs.store_source:
-            attachment = raw_bytes
+            attachment = raw_bytes if raw_bytes is not None else file_path.read_bytes()
 
         return Document(
             content=content,
@@ -327,6 +344,27 @@ class TikaParser:
                 response.raise_for_status()
                 data = response.json()
                 # /rmeta returns a list of metadata objects; use the first
+                if isinstance(data, list) and data:
+                    return data[0]  # type: ignore[no-any-return]
+                return data  # type: ignore[no-any-return]
+        except httpx.ConnectError as exc:
+            raise TikaUnavailableError(
+                f"Cannot connect to Tika server at {self._tika_url}: {exc}"
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise TikaUnavailableError(
+                f"Tika server returned error {exc.response.status_code}"
+            ) from exc
+
+    def _call_tika_stream(self, file_obj: Any) -> dict[str, Any]:
+        """Send file content to Tika via streaming upload."""
+        url = f"{self._tika_url}/rmeta/text"
+        headers = {"Accept": "application/json"}
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.put(url, content=file_obj, headers=headers)
+                response.raise_for_status()
+                data = response.json()
                 if isinstance(data, list) and data:
                     return data[0]  # type: ignore[no-any-return]
                 return data  # type: ignore[no-any-return]
