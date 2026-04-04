@@ -89,7 +89,7 @@ class FsConfig:
 
     url: str = ""
     includes: list[str] = field(default_factory=list)
-    excludes: list[str] = field(default_factory=list)
+    excludes: list[str] = field(default_factory=lambda: ["~*"])
     json_support: bool = False
     xml_support: bool = False
     follow_symlinks: bool = False
@@ -106,6 +106,8 @@ class FsConfig:
     checksum: str = "sha256"
     index_folders: bool = True
     tika_url: str = "http://localhost:9998"
+    content_normalize: bool = False
+    clock_skew_seconds: float = 2.0
     keep_history: bool = False
 
 
@@ -150,6 +152,7 @@ class RestConfig:
 
     url: str = "http://127.0.0.1:8080"
     enable_cors: bool = False
+    max_body_size: int = 104857600  # 100 MB default
 
 
 def _apply_env_to_raw(raw: dict[str, Any], env: dict[str, str]) -> None:
@@ -270,6 +273,10 @@ class FsSettings:
             fs.index_folders = bool(fs_data["index_folders"])
         if "tika_url" in fs_data:
             fs.tika_url = str(fs_data["tika_url"])
+        if "content_normalize" in fs_data:
+            fs.content_normalize = bool(fs_data["content_normalize"])
+        if "clock_skew_seconds" in fs_data:
+            fs.clock_skew_seconds = float(fs_data["clock_skew_seconds"])
 
         # --- elasticsearch ---
         es_data: dict[str, Any] = data.get("elasticsearch") or {}
@@ -344,6 +351,8 @@ class FsSettings:
             rest.url = rest_data["url"]
         if "enable_cors" in rest_data:
             rest.enable_cors = bool(rest_data["enable_cors"])
+        if "max_body_size" in rest_data:
+            rest.max_body_size = parse_byte_size(str(rest_data["max_body_size"]))
 
         return cls(name=str(name), fs=fs, elasticsearch=es, rest=rest)
 

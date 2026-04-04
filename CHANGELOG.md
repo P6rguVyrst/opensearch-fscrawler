@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-04
+
+### Added
+- **Full virtual path matching:** Include/exclude patterns containing `/` now match against the full virtual path instead of filename only, fixing silent misses with upstream configs using path patterns. ([upstream context](https://github.com/dadoonet/fscrawler/issues/1300))
+- **Default excludes:** Tilde-prefixed editor temp files (`~*`) are now excluded by default, matching Java upstream behavior.
+- **`.fscrawlerignore` sentinel:** Directories containing a `.fscrawlerignore` file are skipped during crawl, including all subdirectories.
+- **Symlink cycle detection:** Crawl tracks visited `(dev, inode)` pairs to detect and break symlink loops when `follow_symlinks` is enabled.
+- **Clock skew tolerance:** `is_new_or_modified()` applies a configurable tolerance (default 2 s) for NFS/CIFS clock drift via `fs.clock_skew_seconds`, preventing silently missed files.
+- **Special file detection:** Named pipes, Unix sockets, and device files are detected and skipped with a warning instead of blocking the crawl.
+- **Unicode NFC normalization:** Filenames are normalized to NFC before virtual path computation, pattern matching, and document ID generation for cross-platform consistency (macOS HFS+ NFD vs Linux ext4 NFC).
+- **`on_moved` handler:** Files moved/renamed within the crawl tree are now properly re-indexed at the new path instead of being silently lost. ([dadoonet/fscrawler#1300](https://github.com/dadoonet/fscrawler/issues/1300))
+- **Observer health-check:** Watchdog observer crashes are detected and the observer is restarted up to 5 times with logging, instead of silently exiting. ([dadoonet/fscrawler#1093](https://github.com/dadoonet/fscrawler/issues/1093))
+- **Metadata-only indexing for large files:** Files exceeding `ignore_above` now have path, size, and timestamp metadata indexed without Tika content extraction, instead of being silently dropped. ([dadoonet/fscrawler#1605](https://github.com/dadoonet/fscrawler/issues/1605))
+- **Large file streaming:** Files larger than 64 KB are streamed to Tika with chunked checksum computation, preventing OOM on large files. ([dadoonet/fscrawler#566](https://github.com/dadoonet/fscrawler/issues/566), [dadoonet/fscrawler#890](https://github.com/dadoonet/fscrawler/issues/890))
+- **File permissions as octal strings:** Permissions are stored as octal strings (e.g., `"644"`) and owner/group resolved to names via `pwd`/`grp` modules. ([dadoonet/fscrawler#956](https://github.com/dadoonet/fscrawler/issues/956), [dadoonet/fscrawler#955](https://github.com/dadoonet/fscrawler/issues/955))
+- **Content whitespace normalization:** New `fs.content_normalize` setting (default `false`) collapses excessive whitespace and blank lines in Tika-extracted content. ([dadoonet/fscrawler#802](https://github.com/dadoonet/fscrawler/issues/802))
+- **REST max body size:** New `rest.max_body_size` setting (default 100 MB) rejects oversized uploads with HTTP 413, including chunked transfer-encoded requests without `Content-Length`. ([dadoonet/fscrawler#1709](https://github.com/dadoonet/fscrawler/issues/1709))
+- **Template validation tests:** All index/component template JSON files are validated for structural integrity and field type consistency.
+
+### Fixed
+- **Permissions mapping type:** Changed `permissions` field in mapping template from `integer` to `keyword` to match the new octal string format. ([dadoonet/fscrawler#904](https://github.com/dadoonet/fscrawler/issues/904))
+- **Windows compatibility:** `grp`/`pwd` imports in parser are now conditional — falls back to numeric UID/GID on platforms where these modules are unavailable.
+- **Metadata-only attributes:** `parse_metadata_only()` now populates file attributes (permissions, owner, group) when `attributes_support` is enabled, matching the full `parse()` path.
+- **Integration test cleanup:** Test indices are now deleted after integration tests complete.
+
+### Security
+- **Symlink escape prevention (CWE-59):** When `follow_symlinks: true`, symlinks resolving outside the crawl root are now rejected. Prevents indexing of sensitive files like `/etc/shadow` via crafted symlinks.
+- **Atomic checkpoint writes (CWE-669):** `save_checkpoint()` now uses temp file + fsync + atomic rename, matching the WAL pattern. Prevents checkpoint corruption on crash that could force a full re-crawl.
+- **`--setup` template bind address (CWE-668):** Generated `_settings.yaml` now defaults `rest.url` to `127.0.0.1:8080` instead of `0.0.0.0:8080`, preventing accidental network exposure of the unauthenticated REST API.
+- **Docker compose port binding (CWE-668):** All port mappings in `docker-compose.yml` now bind to `127.0.0.1` — services are accessible from the local machine but not from the wider network.
+
 ## [0.4.0] - 2026-04-04
 
 ### Added
@@ -28,6 +59,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 - **Breaking:** `--log-otel-endpoint` / `FSCRAWLER_LOG_OTEL_ENDPOINT` renamed to `--otel-endpoint` / `FSCRAWLER_OTEL_ENDPOINT`
 - Bulk errors now parsed per-item and routed to DLQ (retryable) or PFQ (non-retryable) instead of being logged and dropped
+
+### Upstream Issues Addressed (retroactive)
+
+The following open issues in the Java upstream
+([dadoonet/fscrawler](https://github.com/dadoonet/fscrawler)) are resolved by
+architectural decisions already present in this release:
+
+- **[#987](https://github.com/dadoonet/fscrawler/issues/987) — Crawl statistics in a monitoring stack:**
+  OpenTelemetry metrics (`fscrawler.documents.processed`, `fscrawler.dlq.records`,
+  `fscrawler.bulk.duration`, etc.) with Prometheus `/metrics` endpoint and OTLP push.
+- **[#868](https://github.com/dadoonet/fscrawler/issues/868) — Monitor progress from logs or terminal:**
+  Structured JSON logging with per-document status, OTel log export, and metrics
+  instrumentation provide full visibility into crawl progress.
+- **[#1824](https://github.com/dadoonet/fscrawler/issues/1824) — Add/document support for OpenSearch:**
+  This project is built for OpenSearch from the ground up — native `opensearch-py`
+  client, OpenSearch-compatible index templates, and OpenSearch Dashboards integration.
+- **[#399](https://github.com/dadoonet/fscrawler/issues/399) / [#943](https://github.com/dadoonet/fscrawler/issues/943) — Filesystem events (inotify/fsevents) instead of polling:**
+  Watchdog-based event-driven indexing replaces the Java polling loop. Files are
+  indexed on create/modify/delete events in real time via `--loop` mode.
+- **[#529](https://github.com/dadoonet/fscrawler/issues/529) — Event-driven architecture with separate workers:**
+  Crawling, parsing (Tika HTTP), and indexing (BulkIndexer) run as independent
+  components. WAL provides crash-recovery durability between stages.
+- **[#813](https://github.com/dadoonet/fscrawler/issues/813) — Load balancer URL for cluster:**
+  The `opensearch-py` client natively supports load-balanced and proxied endpoints
+  without special configuration.
+- **[#331](https://github.com/dadoonet/fscrawler/issues/331) — Test for continue_on_error option:**
+  DLQ/PFQ routing with error classification, plus unit tests covering
+  `continue_on_error` behavior in crawler, watcher, and indexer.
 
 ### Dependencies
 - `opentelemetry-api>=1.20`

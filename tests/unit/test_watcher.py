@@ -4,16 +4,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from tests.conftest import make_settings
 
 
 def make_handler(settings=None, paused=False):
-    from fscrawler.watcher import FsEventHandler
     from fscrawler.rest_server import CrawlerState
+    from fscrawler.watcher import FsEventHandler
 
     s = settings or make_settings()
     client = MagicMock()
@@ -174,7 +172,7 @@ class TestWatcherNewId:
         # Verify the doc_id passed to client.index is SHA256 of virtual path
         mock_client.index.assert_called_once()
         call_kwargs = mock_client.index.call_args[1]
-        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/test.txt").hexdigest()
         assert call_kwargs["doc_id"] == expected_id
 
     def test_delete_uses_virtual_path(self) -> None:
@@ -193,7 +191,7 @@ class TestWatcherNewId:
         handler = FsEventHandler(settings, mock_client, mock_parser, mock_state)
         handler._delete("/data/test.txt")
 
-        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/test.txt").hexdigest()
         call_kwargs = mock_client.delete.call_args[1]
         assert call_kwargs["doc_id"] == expected_id
 
@@ -312,7 +310,6 @@ class TestFsEventHandlerWalDlq:
 
     def test_delete_early_exception_uses_fallback_doc_id(self) -> None:
         """B1: If _delete() fails before doc_id is assigned, use a fallback ID for DLQ."""
-        import hashlib
 
         mock_wal = MagicMock()
         handler, client, parser, mock_doc = self._make_handler(wal=mock_wal)
@@ -395,3 +392,118 @@ class TestWatcherMetrics:
                 if c[0][1].get("status") == "error"
             ]
             assert len(error_calls) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Full-path pattern matching in watcher (Task 1)
+# ---------------------------------------------------------------------------
+
+
+class TestWatcherFullPathFilters:
+    """Patterns containing '/' must match against the virtual path in the watcher."""
+
+    def test_exclude_with_slash_skips_matching_path(self) -> None:
+        settings = make_settings(fs={"url": "/data", "excludes": ["logs/*"]})
+        handler, client, _ = make_handler(settings=settings)
+        handler.on_created(_file_event(None, "/data/logs/debug.log"))
+        client.index.assert_not_called()
+
+    def test_exclude_with_slash_allows_non_matching_path(self) -> None:
+        settings = make_settings(fs={"url": "/data", "excludes": ["logs/*"]})
+        handler, client, _ = make_handler(settings=settings)
+        handler.on_created(_file_event(None, "/data/keep/debug.log"))
+        client.index.assert_called_once()
+
+    def test_include_with_slash_matches_virtual_path(self) -> None:
+        settings = make_settings(fs={"url": "/data", "includes": ["docs/*.pdf"]})
+        handler, client, _ = make_handler(settings=settings)
+        handler.on_created(_file_event(None, "/data/docs/report.pdf"))
+        client.index.assert_called_once()
+
+    def test_include_with_slash_blocks_non_matching_path(self) -> None:
+        settings = make_settings(fs={"url": "/data", "includes": ["docs/*.pdf"]})
+        handler, client, _ = make_handler(settings=settings)
+        handler.on_created(_file_event(None, "/data/other/report.pdf"))
+        client.index.assert_not_called()
+
+    def test_on_modified_respects_path_patterns(self) -> None:
+        settings = make_settings(fs={"url": "/data", "excludes": ["logs/*"]})
+        handler, client, _ = make_handler(settings=settings)
+        handler.on_modified(_file_event(None, "/data/logs/debug.log"))
+        client.index.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# on_moved (Task 8)
+# ---------------------------------------------------------------------------
+
+
+# Upstream: https://github.com/dadoonet/fscrawler/issues/1300
+class TestOnMoved:
+    """Handle file move events — reindex at new path."""
+
+    def test_moved_file_reindexed_at_new_path(self, tmp_path: Path) -> None:
+        (tmp_path / "data").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "data" / "new_name.txt").write_bytes(b"content")
+
+        settings = make_settings(fs={"url": str(tmp_path / "data"), "remove_deleted": True})
+        handler, client, parser = make_handler(settings=settings)
+
+        event = MagicMock()
+        event.is_directory = False
+        event.src_path = str(tmp_path / "data" / "old_name.txt")
+        event.dest_path = str(tmp_path / "data" / "new_name.txt")
+
+        handler.on_moved(event)
+
+        # Old path should be deleted
+        client.delete.assert_called_once()
+        # New path should be indexed
+        client.index.assert_called_once()
+
+    def test_moved_directory_ignored(self) -> None:
+        settings = make_settings(fs={"url": "/data", "remove_deleted": True})
+        handler, client, _ = make_handler(settings=settings)
+
+        event = MagicMock()
+        event.is_directory = True
+        event.src_path = "/data/old_dir"
+        event.dest_path = "/data/new_dir"
+
+        handler.on_moved(event)
+
+        client.delete.assert_not_called()
+        client.index.assert_not_called()
+
+    def test_moved_respects_paused_state(self) -> None:
+        settings = make_settings(fs={"url": "/data", "remove_deleted": True})
+        handler, client, _ = make_handler(settings=settings, paused=True)
+
+        event = MagicMock()
+        event.is_directory = False
+        event.src_path = "/data/old.txt"
+        event.dest_path = "/data/new.txt"
+
+        handler.on_moved(event)
+
+        client.delete.assert_not_called()
+        client.index.assert_not_called()
+
+    def test_moved_skips_delete_when_remove_deleted_false(self, tmp_path: Path) -> None:
+        (tmp_path / "data").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "data" / "new.txt").write_bytes(b"content")
+
+        settings = make_settings(fs={"url": str(tmp_path / "data"), "remove_deleted": False})
+        handler, client, parser = make_handler(settings=settings)
+
+        event = MagicMock()
+        event.is_directory = False
+        event.src_path = str(tmp_path / "data" / "old.txt")
+        event.dest_path = str(tmp_path / "data" / "new.txt")
+
+        handler.on_moved(event)
+
+        # Should NOT delete old path when remove_deleted is False
+        client.delete.assert_not_called()
+        # Should still index new path
+        client.index.assert_called_once()

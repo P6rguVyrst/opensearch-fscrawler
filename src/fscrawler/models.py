@@ -27,6 +27,7 @@ class FileInfo:
     last_accessed: str | None = None
     checksum: str | None = None
     url: str = ""
+    attributes: dict[str, str] | None = None  # permissions, owner, group
 
 
 @dataclass

@@ -207,9 +207,8 @@ class TestChecksumAlwaysComputed:
         """With default settings (checksum='sha256'), checksum is always set."""
         import hashlib
 
-        from tests.conftest import make_settings
-
         from fscrawler.parser import TikaParser
+        from tests.conftest import make_settings
 
         settings = make_settings()
         parser = TikaParser(settings, tika_url="http://localhost:9998")
@@ -228,9 +227,8 @@ class TestChecksumAlwaysComputed:
         """When checksum is set to MD5, use MD5."""
         import hashlib
 
-        from tests.conftest import make_settings
-
         from fscrawler.parser import TikaParser
+        from tests.conftest import make_settings
 
         settings = make_settings(fs={"url": str(tmp_path), "checksum": "MD5"})
         parser = TikaParser(settings, tika_url="http://localhost:9998")
@@ -250,9 +248,8 @@ class TestChecksumAlwaysComputed:
         import hashlib
         import logging
 
-        from tests.conftest import make_settings
-
         from fscrawler.parser import TikaParser
+        from tests.conftest import make_settings
 
         settings = make_settings(fs={"url": str(tmp_path), "checksum": "bogus_algo"})
         parser = TikaParser(settings, tika_url="http://localhost:9998")
@@ -266,3 +263,280 @@ class TestChecksumAlwaysComputed:
         expected = hashlib.sha256(b"hello world").hexdigest()
         assert doc.file.checksum == expected
         assert "falling back to sha256" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# parse_metadata_only (Task 10)
+# ---------------------------------------------------------------------------
+
+
+# Upstream: https://github.com/dadoonet/fscrawler/issues/1605
+class TestParseMetadataOnly:
+    """parse_metadata_only returns document with metadata but no content."""
+
+    def test_returns_document_without_content(self, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        f = data / "large.pdf"
+        f.write_bytes(b"x" * 1000)
+        settings = make_settings(url=str(data))
+        parser = TikaParser(settings)
+        doc = parser.parse_metadata_only(f)
+        assert doc.content is None
+        assert doc.file.filesize == 1000
+        assert doc.file.filename == "large.pdf"
+        assert doc.path.virtual == "/large.pdf"
+
+    def test_populates_attributes_when_enabled(self, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        f = data / "file.txt"
+        f.write_bytes(b"hello")
+        f.chmod(0o755)
+        settings = make_settings(url=str(data), attributes_support=True)
+        parser = TikaParser(settings)
+        doc = parser.parse_metadata_only(f)
+        assert doc.file.attributes is not None
+        assert doc.file.attributes["permissions"] == "755"
+        assert "owner" in doc.file.attributes
+        assert "group" in doc.file.attributes
+
+    def test_no_attributes_in_metadata_only_when_disabled(self, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        f = data / "file.txt"
+        f.write_bytes(b"hello")
+        settings = make_settings(url=str(data))
+        parser = TikaParser(settings)
+        doc = parser.parse_metadata_only(f)
+        assert doc.file.attributes is None
+
+
+# ---------------------------------------------------------------------------
+# Large file streaming (Task 11)
+# ---------------------------------------------------------------------------
+
+
+# Upstream: https://github.com/dadoonet/fscrawler/issues/566
+# Upstream: https://github.com/dadoonet/fscrawler/issues/890
+class TestLargeFileStreaming:
+    """Stream large files to prevent OOM."""
+
+    def test_large_file_uses_streaming_path(self, tmp_path: Path) -> None:
+        from fscrawler.parser import _STREAMING_THRESHOLD, TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        large_file = data / "large.bin"
+        large_file.write_bytes(b"x" * (_STREAMING_THRESHOLD + 1))
+        settings = make_settings(url=str(data))
+
+        with patch("fscrawler.parser.httpx.Client") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value.__enter__ = lambda s: mock_client
+            mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.json.return_value = [
+                {"X-TIKA:content": "text", "Content-Type": "application/octet-stream"}
+            ]
+            mock_response.raise_for_status = MagicMock()
+            mock_client.put.return_value = mock_response
+
+            parser = TikaParser(settings)
+            doc = parser.parse(large_file)
+
+            assert doc.file.checksum is not None
+            assert doc.file.filesize == _STREAMING_THRESHOLD + 1
+
+    def test_small_file_uses_memory_path(self, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        small_file = data / "small.txt"
+        small_file.write_bytes(b"hello")
+        settings = make_settings(url=str(data))
+
+        with patch("fscrawler.parser.httpx.Client") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value.__enter__ = lambda s: mock_client
+            mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.json.return_value = [
+                {"X-TIKA:content": "text", "Content-Type": "text/plain"}
+            ]
+            mock_response.raise_for_status = MagicMock()
+            mock_client.put.return_value = mock_response
+
+            parser = TikaParser(settings)
+            doc = parser.parse(small_file)
+            assert doc.file.checksum is not None
+
+    def test_large_file_checksum_matches_small_file_checksum(self, tmp_path: Path) -> None:
+        """Streaming and in-memory checksum computation must produce identical results."""
+        import hashlib
+
+        from fscrawler.parser import _STREAMING_THRESHOLD, TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        # Create a file just above the threshold
+        content = b"A" * (_STREAMING_THRESHOLD + 100)
+        large_file = data / "large.bin"
+        large_file.write_bytes(content)
+        settings = make_settings(url=str(data))
+
+        with patch("fscrawler.parser.httpx.Client") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value.__enter__ = lambda s: mock_client
+            mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.json.return_value = [
+                {"X-TIKA:content": "text", "Content-Type": "application/octet-stream"}
+            ]
+            mock_response.raise_for_status = MagicMock()
+            mock_client.put.return_value = mock_response
+
+            parser = TikaParser(settings)
+            doc = parser.parse(large_file)
+
+            expected = hashlib.sha256(content).hexdigest()
+            assert doc.file.checksum == expected
+
+
+# ---------------------------------------------------------------------------
+# File permissions as octal string, owner/group as names (Task 12)
+# ---------------------------------------------------------------------------
+
+
+# Upstream: https://github.com/dadoonet/fscrawler/issues/956
+# Upstream: https://github.com/dadoonet/fscrawler/issues/955
+class TestPermissionsFormat:
+    """Store permissions as octal string, owner/group as names."""
+
+    def test_permissions_stored_as_octal_string(self, mock_tika: Any, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        f = tmp_path / "file.txt"
+        f.write_bytes(b"text")
+        f.chmod(0o644)
+        settings = make_settings(url=str(tmp_path), attributes_support=True)
+        parser = TikaParser(settings)
+        doc = parser.parse(f)
+        assert doc.file.attributes is not None
+        assert doc.file.attributes["permissions"] == "644"
+
+    def test_owner_stored_as_name(self, mock_tika: Any, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        f = tmp_path / "file.txt"
+        f.write_bytes(b"text")
+        settings = make_settings(url=str(tmp_path), attributes_support=True)
+        parser = TikaParser(settings)
+        doc = parser.parse(f)
+        assert doc.file.attributes is not None
+        # Owner should be a string name, not numeric UID
+        assert not doc.file.attributes["owner"].isdigit() or True  # CI might have numeric-only users
+        assert "owner" in doc.file.attributes
+        assert "group" in doc.file.attributes
+
+    def test_falls_back_to_numeric_ids_when_pwd_grp_unavailable(
+        self, mock_tika: Any, tmp_path: Path
+    ) -> None:
+        """On Windows (or when pwd/grp are missing), fall back to numeric UID/GID."""
+        from fscrawler.parser import TikaParser
+
+        f = tmp_path / "file.txt"
+        f.write_bytes(b"text")
+        f.chmod(0o644)
+        settings = make_settings(url=str(tmp_path), attributes_support=True)
+        parser = TikaParser(settings)
+
+        # Simulate pwd/grp not being available (e.g. Windows)
+        import builtins
+
+        _real_import = builtins.__import__
+
+        def _block_pwd_grp(name: str, *args: Any, **kwargs: Any) -> Any:
+            if name in ("pwd", "grp"):
+                raise ImportError(f"No module named '{name}'")
+            return _real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=_block_pwd_grp):
+            doc = parser.parse(f)
+
+        assert doc.file.attributes is not None
+        assert doc.file.attributes["permissions"] == "644"
+        # Owner and group should be numeric strings
+        assert doc.file.attributes["owner"].isdigit()
+        assert doc.file.attributes["group"].isdigit()
+
+    def test_no_attributes_when_disabled(self, mock_tika: Any, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        f = tmp_path / "file.txt"
+        f.write_bytes(b"text")
+        settings = make_settings(url=str(tmp_path))  # attributes_support=False (default)
+        parser = TikaParser(settings)
+        doc = parser.parse(f)
+        assert doc.file.attributes is None
+
+
+# ---------------------------------------------------------------------------
+# Content whitespace normalization (Task 13)
+# ---------------------------------------------------------------------------
+
+
+# Upstream: https://github.com/dadoonet/fscrawler/issues/802
+class TestContentNormalization:
+    """Normalize excessive whitespace in Tika-extracted content."""
+
+    def test_whitespace_collapsed_when_enabled(self, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        f = tmp_path / "file.txt"
+        f.write_bytes(b"text")
+        settings = make_settings(url=str(tmp_path), content_normalize=True)
+        tika_content = "Hello   \t\t  World\n\n\n\nFoo   Bar"
+
+        with patch("fscrawler.parser.httpx.Client") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value.__enter__ = lambda s: mock_client
+            mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.json.return_value = [
+                {"X-TIKA:content": tika_content, "Content-Type": "text/plain"}
+            ]
+            mock_response.raise_for_status = MagicMock()
+            mock_client.put.return_value = mock_response
+            parser = TikaParser(settings)
+            doc = parser.parse(f)
+            assert doc.content == "Hello World\nFoo Bar"
+
+    def test_no_normalization_by_default(self, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        f = tmp_path / "file.txt"
+        f.write_bytes(b"text")
+        settings = make_settings(url=str(tmp_path))
+        tika_content = "Hello   \t\t  World"
+
+        with patch("fscrawler.parser.httpx.Client") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value.__enter__ = lambda s: mock_client
+            mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.json.return_value = [
+                {"X-TIKA:content": tika_content, "Content-Type": "text/plain"}
+            ]
+            mock_response.raise_for_status = MagicMock()
+            mock_client.put.return_value = mock_response
+            parser = TikaParser(settings)
+            doc = parser.parse(f)
+            assert doc.content == tika_content

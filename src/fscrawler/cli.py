@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
+    from watchdog.observers.api import BaseObserver
+
     from fscrawler.client import FsCrawlerClient
     from fscrawler.parser import TikaParser
     from fscrawler.settings import FsSettings
@@ -28,6 +30,56 @@ from fscrawler.wal import WriteAheadLog
 from fscrawler.watcher import FsEventHandler
 
 logger = logging.getLogger("fscrawler.cli")
+
+_MAX_OBSERVER_RESTARTS = 5
+
+
+# I1: Shared observer health-check + restart loop used by both
+# _crawler_loop() and _run() to eliminate duplication.
+def _watch_with_restarts(
+    handler: Any,
+    path: str,
+    observer: BaseObserver,
+    stop_event: threading.Event | None = None,
+) -> None:
+    """Monitor a watchdog Observer and restart it up to _MAX_OBSERVER_RESTARTS times.
+
+    Parameters
+    ----------
+    handler:
+        The watchdog event handler to schedule on each new Observer.
+    path:
+        Filesystem path to watch (recursive).
+    observer:
+        An already-started Observer instance.
+    stop_event:
+        Optional threading.Event to set in the finally block (used by --loop mode).
+    """
+    restarts = 0
+    try:
+        while True:
+            if observer.is_alive():
+                time.sleep(1)
+                continue
+            if restarts >= _MAX_OBSERVER_RESTARTS:
+                logger.error(
+                    "Watchdog observer died %d times, giving up", restarts
+                )
+                break
+            restarts += 1
+            logger.warning(
+                "Watchdog observer died, restarting (attempt %d/%d)",
+                restarts,
+                _MAX_OBSERVER_RESTARTS,
+            )
+            observer = Observer()
+            observer.schedule(handler, path, recursive=True)
+            observer.start()
+    finally:
+        if stop_event is not None:
+            stop_event.set()
+        observer.stop()
+        observer.join()
 
 
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
@@ -58,9 +110,9 @@ logger = logging.getLogger("fscrawler.cli")
     default=False,
     help="Create an example _settings.yaml and exit.",
 )
-# TODO(#missing): --restart — restart job as if it never ran (Java parity)
-# TODO(#missing): --list   — list all configured jobs (Java parity)
-# TODO(#missing): --upgrade — upgrade Elasticsearch indices (Java parity)
+# TODO(#missing): --restart -- restart job as if it never ran (Java parity)
+# TODO(#missing): --list   -- list all configured jobs (Java parity)
+# TODO(#missing): --upgrade -- upgrade Elasticsearch indices (Java parity)
 @click.option(
     "--log-format",
     type=click.Choice(["json", "text"], case_sensitive=False),
@@ -104,7 +156,7 @@ def main(
     log_file: Path | None,
     otel_endpoint: str | None,
 ) -> None:
-    """FSCrawler — index files into OpenSearch / Elasticsearch."""
+    """FSCrawler -- index files into OpenSearch / Elasticsearch."""
     from fscrawler.logging_config import configure_logging, install_exception_hook
 
     configure_logging(
@@ -132,7 +184,7 @@ def main(
 
     if not settings_file.exists():
         logger.error(
-            "Settings file not found: %s — run with --setup to create a template.",
+            "Settings file not found: %s -- run with --setup to create a template.",
             settings_file,
         )
         sys.exit(1)
@@ -143,7 +195,7 @@ def main(
         else:
             _run(job_name, settings_file, job_dir, loop)
     except Exception:
-        logger.critical("fscrawler terminated — unhandled error", exc_info=True)
+        logger.critical("fscrawler terminated -- unhandled error", exc_info=True)
         sys.exit(1)
 
 
@@ -258,7 +310,7 @@ def _run_rest(settings_file: Path, job_dir: Path, *, otel_endpoint: str | None =
 
     crawler_state = CrawlerState()
 
-    # Background crawler thread — mirrors Java's dual REST+crawl mode.
+    # Background crawler thread -- mirrors Java's dual REST+crawl mode.
     # The thread is a daemon so it exits automatically when uvicorn shuts down.
     bg_thread = threading.Thread(
         target=_crawler_loop,
@@ -293,7 +345,7 @@ def _crawler_loop(
 
     1. Runs one full scan on startup to index all existing files.
     2. Starts a watchdog Observer to immediately process create/modify/delete
-       events as they happen — no polling delay.
+       events as they happen -- no polling delay.
     3. Errors in the initial scan are logged but do not prevent the observer
        from starting.
     """
@@ -301,7 +353,7 @@ def _crawler_loop(
 
     parser = TikaParser(settings, tika_url=settings.fs.tika_url)
 
-    # Initial scan — index everything already in the directory.
+    # Initial scan -- index everything already in the directory.
     try:
         _crawl_once(settings, client, parser, job_dir, wal=wal)
     except Exception as exc:
@@ -314,12 +366,7 @@ def _crawler_loop(
     observer.start()
     logger.info("Watchdog observer started on %s", settings.fs.url)
 
-    try:
-        while observer.is_alive():
-            time.sleep(1)
-    finally:
-        observer.stop()
-        observer.join()
+    _watch_with_restarts(handler, str(settings.fs.url), observer)
 
 
 def _crawl_once(
@@ -350,12 +397,15 @@ def _crawl_once(
         for file_path in crawler.scan():
             if crawler.is_new_or_modified(file_path):
                 try:
-                    doc = parser.parse(file_path)
+                    if crawler.exceeds_size_limit(file_path):
+                        doc = parser.parse_metadata_only(file_path)
+                    else:
+                        doc = parser.parse(file_path)
                     indexer.add(doc)
                 except Exception as exc:
                     if settings.fs.continue_on_error:
                         logger.warning(
-                            "Error parsing %s — skipping (continue_on_error=true)",
+                            "Error parsing %s -- skipping (continue_on_error=true)",
                             file_path,
                             exc_info=exc,
                         )
@@ -399,7 +449,7 @@ def _run(job_name: str, settings_file: Path, job_dir: Path, loop: bool) -> None:
     _crawl_once(settings, client, parser, job_dir, wal=wal)
 
     if not loop:
-        logger.info("Single-run mode — DLQ retry thread not started. Use --loop or --rest for automatic retries.")
+        logger.info("Single-run mode -- DLQ retry thread not started. Use --loop or --rest for automatic retries.")
 
     if loop:
         stop_event = threading.Event()
@@ -411,13 +461,8 @@ def _run(job_name: str, settings_file: Path, job_dir: Path, loop: bool) -> None:
         observer.schedule(handler, str(settings.fs.url), recursive=True)
         observer.start()
         logger.info("Watchdog observer started on %s", settings.fs.url)
-        try:
-            while observer.is_alive():
-                time.sleep(1)
-        finally:
-            stop_event.set()
-            observer.stop()
-            observer.join()
+
+        _watch_with_restarts(handler, str(settings.fs.url), observer, stop_event=stop_event)
 
 
 def _do_setup(job_dir: Path, settings_file: Path) -> None:
@@ -450,7 +495,7 @@ elasticsearch:
   byte_size: "10mb"
   push_templates: true
 rest:
-  url: "http://0.0.0.0:8080"
+  url: "http://127.0.0.1:8080"
   enable_cors: false
 """
     settings_file.write_text(template, encoding="utf-8")

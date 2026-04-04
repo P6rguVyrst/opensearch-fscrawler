@@ -8,14 +8,15 @@ for the next polling cycle.
 
 from __future__ import annotations
 
-import fnmatch
 import logging
+import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from watchdog.events import FileSystemEventHandler
 
+from fscrawler.crawler import _matches_pattern
 from fscrawler.dlq import DLQ_INDEX, build_dlq_record, make_dlq_doc_id
 from fscrawler.metrics import dlq_records, documents_processed
 from fscrawler.models import make_doc_id
@@ -53,6 +54,7 @@ class FsEventHandler(FileSystemEventHandler):
         self._parser = parser
         self._crawler_state = crawler_state
         self._wal = wal
+        self._root = Path(settings.fs.url)
 
     # ------------------------------------------------------------------
     # watchdog callbacks
@@ -61,16 +63,31 @@ class FsEventHandler(FileSystemEventHandler):
     def on_created(self, event: Any) -> None:
         if event.is_directory or self._crawler_state.paused:
             return
-        if not self._matches(Path(event.src_path).name):
+        p = Path(event.src_path)
+        if not self._matches(p.name, self._virtual_path(p)):
             return
-        self._index(Path(event.src_path))
+        self._index(p)
 
     def on_modified(self, event: Any) -> None:
         if event.is_directory or self._crawler_state.paused:
             return
-        if not self._matches(Path(event.src_path).name):
+        p = Path(event.src_path)
+        if not self._matches(p.name, self._virtual_path(p)):
             return
-        self._index(Path(event.src_path))
+        self._index(p)
+
+    def on_moved(self, event: Any) -> None:
+        """Handle file move: delete old path, index new path."""
+        if event.is_directory or self._crawler_state.paused:
+            return
+        # Delete old location
+        if self._settings.fs.remove_deleted:
+            self._delete(event.src_path)
+        # Index new location
+        p = Path(event.dest_path)
+        if not self._matches(p.name, self._virtual_path(p)):
+            return
+        self._index(p)
 
     def on_deleted(self, event: Any) -> None:
         if event.is_directory or self._crawler_state.paused:
@@ -83,12 +100,24 @@ class FsEventHandler(FileSystemEventHandler):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _matches(self, name: str) -> bool:
+    def _virtual_path(self, path: Path) -> str:
+        """Compute the virtual path relative to the crawl root."""
+        try:
+            raw = "/" + path.relative_to(self._root).as_posix()
+        except ValueError:
+            raw = "/" + path.name
+        return unicodedata.normalize("NFC", raw)
+
+    def _matches(self, name: str, virtual_path: str = "") -> bool:
         """Return True if name passes the includes/excludes filters."""
         fs = self._settings.fs
-        if fs.includes and not any(fnmatch.fnmatch(name, p) for p in fs.includes):
+        if fs.includes and not any(
+            _matches_pattern(name, virtual_path, p) for p in fs.includes
+        ):
             return False
-        return not any(fnmatch.fnmatch(name, p) for p in fs.excludes)
+        return not any(
+            _matches_pattern(name, virtual_path, p) for p in fs.excludes
+        )
 
     def _index(self, path: Path) -> None:
         if path.is_dir():

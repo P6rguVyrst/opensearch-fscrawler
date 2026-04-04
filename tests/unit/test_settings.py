@@ -6,7 +6,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-import yaml
 
 from fscrawler.settings import (
     ElasticsearchSettings,
@@ -16,7 +15,6 @@ from fscrawler.settings import (
     parse_duration,
     parse_indexed_chars,
 )
-
 
 # ---------------------------------------------------------------------------
 # parse_duration
@@ -413,3 +411,37 @@ class TestDLQSettings:
         f.write_text("name: myjob\nfs:\n  url: /data\n")
         s = FsSettings.from_file(f, environ={"FSCRAWLER_ELASTICSEARCH_DLQ_CHECK_INTERVAL": "120"})
         assert s.elasticsearch.dlq.check_interval == 120
+
+
+class TestNewV050Settings:
+    """Round-trip tests for v0.5.0 config fields."""
+
+    def test_content_normalize_parsed(self) -> None:
+        data = {"name": "j", "fs": {"url": "/", "content_normalize": True}}
+        settings = FsSettings.from_dict(data)
+        assert settings.fs.content_normalize is True
+
+    def test_content_normalize_defaults_false(self) -> None:
+        data = {"name": "j", "fs": {"url": "/"}}
+        settings = FsSettings.from_dict(data)
+        assert settings.fs.content_normalize is False
+
+    def test_max_body_size_parsed(self) -> None:
+        data = {"name": "j", "rest": {"max_body_size": "50mb"}}
+        settings = FsSettings.from_dict(data)
+        assert settings.rest.max_body_size == 50 * 1024 * 1024
+
+    def test_max_body_size_default(self) -> None:
+        data = {"name": "j", "fs": {"url": "/"}}
+        settings = FsSettings.from_dict(data)
+        assert settings.rest.max_body_size == 104857600  # 100 MB
+
+    def test_clock_skew_seconds_parsed(self) -> None:
+        data = {"name": "j", "fs": {"url": "/", "clock_skew_seconds": 5.0}}
+        settings = FsSettings.from_dict(data)
+        assert settings.fs.clock_skew_seconds == 5.0
+
+    def test_clock_skew_seconds_default(self) -> None:
+        data = {"name": "j", "fs": {"url": "/"}}
+        settings = FsSettings.from_dict(data)
+        assert settings.fs.clock_skew_seconds == 2.0

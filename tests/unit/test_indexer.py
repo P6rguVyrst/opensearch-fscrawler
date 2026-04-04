@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 from tests.conftest import make_document, make_settings
-
 
 # ---------------------------------------------------------------------------
 # Buffering
@@ -91,11 +90,10 @@ class TestIndexerDocumentId:
         call_args = mock_opensearch_client.bulk.call_args
         body = call_args[1].get("body") or call_args[0][0]
         index_actions = [op for op in body if "index" in op]
-        expected_id = hashlib.sha256("/myfile.txt".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/myfile.txt").hexdigest()
         assert index_actions[0]["index"]["_id"] == expected_id
 
     def test_same_virtual_path_same_id(self, mock_opensearch_client: MagicMock) -> None:
-        import hashlib
 
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
@@ -200,7 +198,7 @@ class TestIndexerDeleteNewId:
         call_args = mock_opensearch_client.bulk.call_args
         body = call_args[1].get("body") or call_args[0][0]
         delete_ops = [op for op in body if "delete" in op]
-        expected_id = hashlib.sha256("/gone.txt".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/gone.txt").hexdigest()
         assert delete_ops[0]["delete"]["_id"] == expected_id
 
 
@@ -507,7 +505,7 @@ class TestBulkIndexerWalIntegration:
         wal = MagicMock()
 
         doc = make_document("/data/test.txt")
-        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/test.txt").hexdigest()
 
         # Mock bulk response with matching item
         mock_opensearch_client.bulk.return_value = {
@@ -538,7 +536,7 @@ class TestBulkIndexerWalIntegration:
         wal = MagicMock()
 
         doc = make_document("/data/test.txt")
-        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/test.txt").hexdigest()
 
         # Retryable error (e.g., 429 rejected_execution_exception)
         mock_opensearch_client.bulk.return_value = {
@@ -581,7 +579,7 @@ class TestBulkIndexerWalIntegration:
         wal = MagicMock()
 
         doc = make_document("/data/test.txt")
-        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/test.txt").hexdigest()
 
         # Non-retryable error
         mock_opensearch_client.bulk.return_value = {
@@ -666,13 +664,14 @@ class TestIndexerMetrics:
         self, mock_opensearch_client: MagicMock
     ) -> None:
         import hashlib
+
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
 
         settings = make_settings(elasticsearch={"bulk_size": 1})
         client = FsCrawlerClient(settings)
 
-        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/test.txt").hexdigest()
         mock_opensearch_client.bulk.return_value = {
             "took": 5, "errors": False,
             "items": [{"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 201}}],
@@ -688,12 +687,13 @@ class TestIndexerMetrics:
         self, mock_opensearch_client: MagicMock
     ) -> None:
         import hashlib
+
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
 
         settings = make_settings(elasticsearch={"bulk_size": 1})
         client = FsCrawlerClient(settings)
-        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/test.txt").hexdigest()
         mock_opensearch_client.bulk.return_value = {
             "took": 5, "errors": True,
             "items": [{"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 429,
@@ -746,12 +746,13 @@ class TestIndexerMetrics:
         self, mock_opensearch_client: MagicMock
     ) -> None:
         import hashlib
+
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
 
         settings = make_settings(elasticsearch={"bulk_size": 1})
         client = FsCrawlerClient(settings)
-        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/test.txt").hexdigest()
         mock_opensearch_client.bulk.return_value = {
             "took": 5, "errors": True,
             "items": [{"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 429,
@@ -767,12 +768,13 @@ class TestIndexerMetrics:
         self, mock_opensearch_client: MagicMock
     ) -> None:
         import hashlib
+
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
 
         settings = make_settings(elasticsearch={"bulk_size": 1})
         client = FsCrawlerClient(settings)
-        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/test.txt").hexdigest()
         mock_opensearch_client.bulk.return_value = {
             "took": 5, "errors": True,
             "items": [{"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 400,
@@ -795,7 +797,6 @@ class TestPendingThreadSafety:
 
     def test_add_populates_pending_under_lock(self, mock_opensearch_client: MagicMock) -> None:
         """_pending[doc_id] must be set inside the lock, not outside it."""
-        import threading
 
         from fscrawler.client import FsCrawlerClient
         from fscrawler.indexer import BulkIndexer
@@ -814,7 +815,7 @@ class TestPendingThreadSafety:
             def __init__(self) -> None:
                 self._held = False
 
-            def __enter__(self) -> "TrackingLock":
+            def __enter__(self) -> TrackingLock:
                 original_lock.acquire()
                 self._held = True
                 return self
@@ -862,7 +863,7 @@ class TestPendingThreadSafety:
             def __init__(self) -> None:
                 self._held = False
 
-            def __enter__(self) -> "TrackingLock":
+            def __enter__(self) -> TrackingLock:
                 original_lock.acquire()
                 self._held = True
                 return self

@@ -6,7 +6,7 @@
           "properties": {
             "owner": { "type": "keyword" },
             "group": { "type": "keyword" },
-            "permissions": { "type": "integer" }
+            "permissions": { "type": "keyword" }
           }
         }
       }

@@ -7,7 +7,6 @@ import json
 import logging
 import sys
 from pathlib import Path
-from types import TracebackType
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -15,12 +14,11 @@ import pytest
 
 from fscrawler.logging_config import (
     OtelJsonFormatter,
-    _OtlpHttpHandler,
     _otel_severity,
+    _OtlpHttpHandler,
     configure_logging,
     install_exception_hook,
 )
-
 
 # ---------------------------------------------------------------------------
 # _otel_severity

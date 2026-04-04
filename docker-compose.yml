@@ -6,6 +6,20 @@
 #   docker compose up -d            # start everything
 #   docker compose logs -f fscrawler
 #   docker compose down             # stop and remove containers
+#
+# Network security:
+#   All host port mappings bind to 127.0.0.1 so services are reachable from
+#   your laptop (browser, curl, etc.) but not from the wider network.
+#
+#   The config/_settings.yaml files use rest.url: "http://0.0.0.0:8080" because
+#   that address is evaluated *inside the container* — 0.0.0.0 means "accept
+#   connections on any container interface", which is required for the host port
+#   mapping to reach the process.  The 127.0.0.1 prefix on the *host side*
+#   (e.g. "127.0.0.1:8080:8080") is what limits external exposure.
+#
+#   In short:  container binds 0.0.0.0 (required) → docker-compose exposes
+#   via 127.0.0.1 (safe).  Do NOT remove the 127.0.0.1 prefix unless you
+#   understand the security implications (see SECURITY.md).
 
 services:
 
@@ -25,8 +39,8 @@ services:
         soft: -1
         hard: -1
     ports:
-      - "9200:9200"
-      - "9600:9600"
+      - "127.0.0.1:9200:9200"
+      - "127.0.0.1:9600:9600"
     volumes:
       - opensearch-data:/usr/share/opensearch/data
     healthcheck:
@@ -45,13 +59,13 @@ services:
       - OPENSEARCH_HOSTS=["http://opensearch:9200"]
       - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
     ports:
-      - "5601:5601"
+      - "127.0.0.1:5601:5601"
 
   tika:
     image: apache/tika:latest-full@sha256:ecdd37e204308266b1f8e28569f8516ebd5b96d7a4518a71d3904710b20c03b3
     container_name: fscrawler-tika
     ports:
-      - "9998:9998"
+      - "127.0.0.1:9998:9998"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9998/tika | grep -q 'Apache Tika'"]
       interval: 10s
@@ -72,7 +86,7 @@ services:
       - ./config:/home/fscrawler/.fscrawler
       - ./playground/data:/data
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "--", "markdown"]
 
   fscrawler-pdf:
@@ -89,7 +103,7 @@ services:
       - ./config:/home/fscrawler/.fscrawler
       - ./playground/data:/data
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "--", "pdf"]
 
   fscrawler-catchall:
@@ -106,7 +120,7 @@ services:
       - ./config:/home/fscrawler/.fscrawler
       - ./playground/data:/data
     ports:
-      - "8082:8082"
+      - "127.0.0.1:8082:8082"
     command: ["--config_dir", "/home/fscrawler/.fscrawler", "--loop", "--", "catchall"]
 
 volumes:

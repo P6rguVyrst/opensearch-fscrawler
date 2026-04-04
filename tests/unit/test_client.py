@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from tests.conftest import load_fixture, make_settings
-
 
 # ---------------------------------------------------------------------------
 # FsCrawlerClient initialisation
@@ -195,9 +193,8 @@ class TestWaitForCluster:
         settings = make_settings()
         client = FsCrawlerClient(settings)
         mock_opensearch_client.info.side_effect = OSConnectionError("N/A", "refused", None)
-        with patch("fscrawler.client.time.sleep"):
-            with pytest.raises(OSConnectionError):
-                client.wait_for_cluster(max_retries=3)
+        with patch("fscrawler.client.time.sleep"), pytest.raises(OSConnectionError):
+            client.wait_for_cluster(max_retries=3)
 
     def test_sleep_duration_doubles_each_attempt(
         self, mock_opensearch_client: MagicMock

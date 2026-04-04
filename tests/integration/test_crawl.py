@@ -28,13 +28,16 @@ def unique_name() -> str:
 
 @pytest.fixture()
 def integration_settings(tmp_path: Path) -> Any:
-    """Build FsSettings pointing at a real OpenSearch instance."""
+    """Build FsSettings pointing at a real OpenSearch instance.
+
+    Yields the settings and cleans up test indices after the test completes.
+    """
     from fscrawler.settings import FsSettings
 
     job_name = unique_name()
     data_dir = tmp_path / "data"
     data_dir.mkdir()
-    return FsSettings.from_dict(
+    settings = FsSettings.from_dict(
         {
             "name": job_name,
             "fs": {
@@ -52,6 +55,20 @@ def integration_settings(tmp_path: Path) -> Any:
             },
         }
     )
+    yield settings
+    # Cleanup: delete test indices created during the test
+    try:
+        from fscrawler.client import FsCrawlerClient
+
+        client = FsCrawlerClient(settings)
+        os_client = client._client
+        for idx in [
+            settings.elasticsearch.index,
+            settings.elasticsearch.index_folder,
+        ]:
+            os_client.indices.delete(index=idx, ignore=[404])
+    except Exception:  # noqa: S110
+        pass
 
 
 @pytest.mark.integration

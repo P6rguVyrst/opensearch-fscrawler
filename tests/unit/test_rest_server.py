@@ -23,11 +23,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
 from starlette.testclient import TestClient
 
 from fscrawler.settings import FsSettings
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -165,7 +163,7 @@ class TestDocumentUpload:
         headers, body = _multipart_body("report.pdf")
         make_app(client=client).post("/_document", content=body, headers=headers)
         _, kwargs = client.index.call_args
-        expected_id = hashlib.sha256("/report.pdf".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/report.pdf").hexdigest()
         assert kwargs.get("doc_id") == expected_id
 
     def test_upload_without_file_returns_422(self) -> None:
@@ -272,7 +270,7 @@ class TestDocumentDeleteByFilename:
         client = make_mock_client()
         make_app(client=client).delete("/_document?filename=report.pdf")
         _, kwargs = client.delete.call_args
-        expected_id = hashlib.sha256("/report.pdf".encode()).hexdigest()
+        expected_id = hashlib.sha256(b"/report.pdf").hexdigest()
         assert kwargs.get("doc_id") == expected_id
 
 
@@ -462,10 +460,41 @@ class TestCrawlerStateThreadSafety:
     def test_paused_is_thread_safe(self) -> None:
         """Verify paused uses threading.Event under the hood."""
         import threading
+
         from fscrawler.rest_server import CrawlerState
         state = CrawlerState()
         assert hasattr(state, '_paused_event')
         assert isinstance(state._paused_event, threading.Event)
+
+
+# Upstream: https://github.com/dadoonet/fscrawler/issues/1709
+class TestMaxBodySize:
+    """Reject uploads exceeding max body size."""
+
+    def test_upload_exceeding_limit_returns_413(self) -> None:
+        settings = make_settings(rest={"url": "http://127.0.0.1:8080", "max_body_size": "1kb"})
+        tc = make_app(settings=settings)
+        headers, body = _multipart_body(data=b"x" * 2048)
+        response = tc.post("/_document", content=body, headers=headers)
+        assert response.status_code == 413
+
+    def test_chunked_upload_exceeding_limit_returns_413(self) -> None:
+        """Chunked requests (no Content-Length) exceeding max_body_size must be rejected."""
+        settings = make_settings(rest={"url": "http://127.0.0.1:8080", "max_body_size": "1kb"})
+        tc = make_app(settings=settings)
+        headers, body = _multipart_body(data=b"x" * 2048)
+        # Remove content-length to simulate chunked transfer encoding
+        headers.pop("content-length", None)
+        headers["transfer-encoding"] = "chunked"
+        response = tc.post("/_document", content=body, headers=headers)
+        assert response.status_code == 413
+
+    def test_upload_within_limit_succeeds(self) -> None:
+        settings = make_settings(rest={"url": "http://127.0.0.1:8080", "max_body_size": "1mb"})
+        tc = make_app(settings=settings)
+        headers, body = _multipart_body(data=b"small content")
+        response = tc.post("/_document", content=body, headers=headers)
+        assert response.status_code == 200
 
 
 class TestCors:
@@ -535,7 +564,7 @@ class TestCliRestFlag:
             CliRunner().invoke(main, ["--config_dir", str(tmp_path), "--rest", "test-job"])
 
         _, kwargs = mock_uvicorn.run.call_args
-        assert kwargs.get("host") == "0.0.0.0"
+        assert kwargs.get("host") == "0.0.0.0"  # noqa: S104
         assert kwargs.get("port") == 9090
 
     def test_uvicorn_log_config_is_none(self, tmp_path: Path) -> None:
@@ -688,7 +717,7 @@ class TestCrawlerLoop:
             patch("fscrawler.cli.FsEventHandler"),
             patch("fscrawler.cli.time"),
         ):
-            _crawler_loop(settings, client, Path("/tmp"), crawler_state)
+            _crawler_loop(settings, client, Path("/tmp"), crawler_state)  # noqa: S108
 
         return mock_crawl_fn, mock_observer
 

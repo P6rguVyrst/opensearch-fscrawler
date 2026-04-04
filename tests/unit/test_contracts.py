@@ -16,7 +16,6 @@ from fscrawler.models import make_doc_id
 from fscrawler.settings import FsSettings
 from fscrawler.templates import get_index_templates
 
-
 # ---------------------------------------------------------------------------
 # Index naming <-> template patterns
 # ---------------------------------------------------------------------------
@@ -108,6 +107,7 @@ class TestDocumentIdConsistency:
 
     def test_watcher_index_uses_make_doc_id(self) -> None:
         from pathlib import Path
+
         from fscrawler.watcher import FsEventHandler
         from tests.conftest import make_document, make_settings
 
@@ -199,7 +199,6 @@ class TestHistoryLimitationContract:
         from pathlib import Path
 
         from fscrawler.watcher import FsEventHandler
-
         from tests.conftest import make_document, make_settings
 
         settings = make_settings(fs={"url": "/data", "keep_history": True})
@@ -219,7 +218,6 @@ class TestHistoryLimitationContract:
 
     def test_watcher_does_not_archive_on_delete(self) -> None:
         from fscrawler.watcher import FsEventHandler
-
         from tests.conftest import make_settings
 
         settings = make_settings(fs={"url": "/data", "keep_history": True, "remove_deleted": True})

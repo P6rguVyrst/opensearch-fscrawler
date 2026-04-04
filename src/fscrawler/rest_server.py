@@ -24,6 +24,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 
 from fscrawler import __version__
 from fscrawler.client import FsCrawlerClient
@@ -96,6 +97,26 @@ def create_app(
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+    # S5: Check body size for both Content-Length and chunked transfer encoding.
+    @app.middleware("http")
+    async def check_body_size(request: Request, call_next):  # type: ignore[no-untyped-def]
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > settings.rest.max_body_size:
+            return JSONResponse(
+                status_code=413,
+                content={"error": "Request body too large"},
+            )
+        # For methods that carry a body but lack Content-Length (e.g. chunked
+        # transfer encoding), read the actual body and check its size.
+        if request.method not in ("GET", "HEAD", "OPTIONS") and not content_length:
+            body = await request.body()
+            if len(body) > settings.rest.max_body_size:
+                return JSONResponse(
+                    status_code=413,
+                    content={"error": "Request body too large"},
+                )
+        return await call_next(request)
 
     # Mount Prometheus /metrics endpoint
     from fscrawler.metrics import get_prometheus_app

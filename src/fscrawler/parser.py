@@ -11,6 +11,10 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import logging
+import os
+import re
+import stat as stat_module
+import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -23,6 +27,7 @@ from fscrawler.settings import FsSettings
 logger = logging.getLogger("fscrawler.parser")
 
 _DEFAULT_TIKA_URL = "http://localhost:9998"
+_STREAMING_THRESHOLD = 65536  # 64 KB — files larger than this are streamed
 
 # Mapping from Tika metadata keys to Meta dataclass fields
 _TIKA_META_MAP: dict[str, str] = {
@@ -66,6 +71,33 @@ _TIKA_META_MAP: dict[str, str] = {
 }
 
 
+def _get_file_attributes(st: os.stat_result) -> dict[str, str]:
+    """Extract file attributes as human-readable strings."""
+    attrs: dict[str, str] = {}
+    attrs["permissions"] = oct(stat_module.S_IMODE(st.st_mode))[2:]
+    try:
+        import pwd
+
+        attrs["owner"] = pwd.getpwuid(st.st_uid).pw_name
+    except (KeyError, ImportError):
+        attrs["owner"] = str(st.st_uid)
+    try:
+        import grp
+
+        attrs["group"] = grp.getgrgid(st.st_gid).gr_name
+    except (KeyError, ImportError):
+        attrs["group"] = str(st.st_gid)
+    return attrs
+
+
+def _normalize_content(text: str) -> str:
+    """Collapse runs of whitespace, preserving single newlines."""
+    text = re.sub(r"[^\S\n]+", " ", text)  # horizontal whitespace -> single space
+    text = re.sub(r"\n{2,}", "\n", text)  # multiple newlines -> single
+    text = "\n".join(line.strip() for line in text.split("\n"))
+    return text.strip()
+
+
 class TikaUnavailableError(RuntimeError):
     """Raised when the Tika server cannot be reached."""
 
@@ -84,17 +116,42 @@ class TikaParser:
     def parse(self, file_path: Path) -> Document:
         """Parse a file and return a Document with extracted content and metadata."""
         fs = self._settings.fs
-        raw_bytes = file_path.read_bytes()
+        file_size = file_path.stat().st_size
 
-        if not raw_bytes:
+        if file_size == 0:
             logger.debug("Skipping zero-byte file: %s", file_path)
             raise ValueError(f"Cannot parse zero-byte file: {file_path}")
 
-        # ------------------------------------------------------------------
-        # Call Tika
-        # ------------------------------------------------------------------
-        tika_meta = self._call_tika(raw_bytes)
+        algo = fs.checksum.lower().replace("-", "")
 
+        if file_size <= _STREAMING_THRESHOLD:
+            # Small file: read entirely into memory
+            raw_bytes = file_path.read_bytes()
+            try:
+                checksum = hashlib.new(algo, raw_bytes).hexdigest()
+            except ValueError:
+                logger.warning("Unknown checksum algorithm %r, falling back to sha256", fs.checksum)
+                checksum = hashlib.sha256(raw_bytes).hexdigest()
+            tika_meta = self._call_tika(raw_bytes)
+        else:
+            # Large file: stream checksum computation
+            raw_bytes = None
+            try:
+                hasher = hashlib.new(algo)
+            except ValueError:
+                logger.warning("Unknown checksum algorithm %r, falling back to sha256", fs.checksum)
+                hasher = hashlib.sha256()
+            with open(file_path, "rb") as fh:
+                while chunk := fh.read(_STREAMING_THRESHOLD):
+                    hasher.update(chunk)
+            checksum = hasher.hexdigest()
+            # Send file to Tika via streaming
+            with open(file_path, "rb") as fh:
+                tika_meta = self._call_tika(fh)
+
+        # ------------------------------------------------------------------
+        # Content-Type
+        # ------------------------------------------------------------------
         content_type = str(tika_meta.get("Content-Type", "application/octet-stream"))
         # Tika may return a list for Content-Type
         if isinstance(content_type, list):
@@ -113,19 +170,14 @@ class TikaParser:
             raw_content = str(raw_content).strip()
             content = raw_content[: fs.indexed_chars] if fs.indexed_chars > 0 else raw_content  # -1 means unlimited
 
+        if content is not None and fs.content_normalize:
+            content = _normalize_content(content)
+
         # ------------------------------------------------------------------
         # File info
         # ------------------------------------------------------------------
         stat = file_path.stat()
         now = datetime.now(tz=UTC).isoformat()
-
-        algo = fs.checksum.lower().replace("-", "")
-        try:
-            h = hashlib.new(algo, raw_bytes)
-            checksum = h.hexdigest()
-        except ValueError:
-            logger.warning("Unknown checksum algorithm %r, falling back to sha256", fs.checksum)
-            checksum = hashlib.sha256(raw_bytes).hexdigest()
 
         created: str | None = None
         with contextlib.suppress(AttributeError):
@@ -151,6 +203,9 @@ class TikaParser:
             url=str(file_path),
         )
 
+        if fs.attributes_support:
+            file_info.attributes = _get_file_attributes(stat)
+
         # ------------------------------------------------------------------
         # Path info
         # ------------------------------------------------------------------
@@ -159,6 +214,7 @@ class TikaParser:
             virtual = "/" + str(file_path.relative_to(root))
         except ValueError:
             virtual = "/" + file_path.name
+        virtual = unicodedata.normalize("NFC", virtual)
 
         path_info = PathInfo(real=str(file_path), root=root, virtual=virtual)
 
@@ -178,7 +234,7 @@ class TikaParser:
         # ------------------------------------------------------------------
         attachment: bytes | None = None
         if fs.store_source:
-            attachment = raw_bytes
+            attachment = raw_bytes if raw_bytes is not None else file_path.read_bytes()
 
         return Document(
             content=content,
@@ -187,6 +243,35 @@ class TikaParser:
             meta=meta,
             attachment=attachment,
         )
+
+    def parse_metadata_only(self, file_path: Path) -> Document:
+        """Create a Document with file metadata but no content extraction.
+
+        Used for files exceeding ignore_above — indexes path, size,
+        timestamps, and permissions without calling Tika.
+        """
+        stat = file_path.stat()
+        now = datetime.now(tz=UTC).isoformat()
+        root = str(self._settings.fs.url)
+        try:
+            virtual = "/" + str(file_path.relative_to(root))
+        except ValueError:
+            virtual = "/" + file_path.name
+        virtual = unicodedata.normalize("NFC", virtual)
+
+        file_info = FileInfo(
+            filename=file_path.name,
+            extension=file_path.suffix.lstrip(".").lower(),
+            content_type="",
+            filesize=stat.st_size,
+            indexing_date=now,
+            last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
+            url=str(file_path),
+        )
+        if self._settings.fs.attributes_support:
+            file_info.attributes = _get_file_attributes(stat)
+        path_info = PathInfo(real=str(file_path), root=root, virtual=virtual)
+        return Document(content=None, file=file_info, path=path_info, meta=Meta())
 
     def parse_bytes(
         self, filename: str, data: bytes, content_type: str | None = None
@@ -215,6 +300,9 @@ class TikaParser:
                 raw_content = "\n".join(raw_content)
             raw_content = str(raw_content).strip()
             content = raw_content[: fs.indexed_chars] if fs.indexed_chars > 0 else raw_content
+
+        if content is not None and fs.content_normalize:
+            content = _normalize_content(content)
 
         now = datetime.now(tz=UTC).isoformat()
         name = Path(filename).name
@@ -248,15 +336,16 @@ class TikaParser:
 
         return Document(content=content, file=file_info, path=path_info, meta=meta)
 
-    def _call_tika(self, raw_bytes: bytes) -> dict[str, Any]:
-        """POST file content to Tika's /rmeta/text endpoint and return parsed metadata."""
+    def _call_tika(self, content: Any) -> dict[str, Any]:
+        """Send content to Tika's /rmeta/text endpoint and return parsed metadata.
+
+        Accepts bytes (small files) or a file-like object (streaming).
+        """
         url = f"{self._tika_url}/rmeta/text"
-        headers = {
-            "Accept": "application/json",
-        }
+        headers = {"Accept": "application/json"}
         try:
             with httpx.Client(timeout=30.0) as client:
-                response = client.put(url, content=raw_bytes, headers=headers)
+                response = client.put(url, content=content, headers=headers)
                 response.raise_for_status()
                 data = response.json()
                 # /rmeta returns a list of metadata objects; use the first
