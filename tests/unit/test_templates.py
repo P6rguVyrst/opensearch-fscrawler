@@ -1,6 +1,16 @@
-"""Unit tests for fscrawler.templates."""
+"""Unit tests for fscrawler.templates.
+
+Upstream: https://github.com/dadoonet/fscrawler/issues/904
+"""
 
 from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+_TEMPLATES_DIR = Path(__file__).parent.parent.parent / "src" / "fscrawler" / "_templates"
 
 
 class TestDLQTemplates:
@@ -46,3 +56,43 @@ class TestDLQTemplates:
         props = templates["fscrawler_mapping_pfq"]["template"]["mappings"]["properties"]
         assert "promoted_at" in props
         assert "final_error" in props
+
+
+class TestTemplateValidity:
+    """All template JSON files must be valid and parseable."""
+
+    @pytest.mark.parametrize("json_file", sorted(_TEMPLATES_DIR.glob("*.json")))
+    def test_template_is_valid_json(self, json_file: Path) -> None:
+        data = json.loads(json_file.read_text())
+        assert isinstance(data, dict)
+
+
+class TestMappingTypes:
+    """Validate field types prevent mapping conflicts.
+
+    Upstream: https://github.com/dadoonet/fscrawler/issues/904
+    Upstream: https://github.com/dadoonet/fscrawler/issues/890
+    """
+
+    def test_filesize_uses_long_type(self) -> None:
+        data = json.loads((_TEMPLATES_DIR / "mapping_file.json").read_text())
+        file_props = data["template"]["mappings"]["properties"]["file"]["properties"]
+        assert file_props["filesize"]["type"] == "long"
+
+    def test_indexed_chars_uses_long_type(self) -> None:
+        data = json.loads((_TEMPLATES_DIR / "mapping_file.json").read_text())
+        file_props = data["template"]["mappings"]["properties"]["file"]["properties"]
+        assert file_props["indexed_chars"]["type"] == "long"
+
+    def test_meta_fields_use_compatible_types(self) -> None:
+        data = json.loads((_TEMPLATES_DIR / "mapping_meta.json").read_text())
+        meta_props = data["template"]["mappings"]["properties"]["meta"]["properties"]
+        allowed = {"keyword", "text", "date", "short", "object"}
+        for name, defn in meta_props.items():
+            assert defn.get("type", "object") in allowed, \
+                f"meta.{name} type '{defn.get('type')}' not in allowed set"
+
+    def test_permissions_is_keyword(self) -> None:
+        data = json.loads((_TEMPLATES_DIR / "mapping_attributes.json").read_text())
+        attrs_props = data["template"]["mappings"]["properties"]["attributes"]["properties"]
+        assert attrs_props["permissions"]["type"] == "keyword"
