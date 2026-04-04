@@ -421,6 +421,37 @@ class TestPermissionsFormat:
         assert "owner" in doc.file.attributes
         assert "group" in doc.file.attributes
 
+    def test_falls_back_to_numeric_ids_when_pwd_grp_unavailable(
+        self, mock_tika: Any, tmp_path: Path
+    ) -> None:
+        """On Windows (or when pwd/grp are missing), fall back to numeric UID/GID."""
+        from fscrawler.parser import TikaParser
+
+        f = tmp_path / "file.txt"
+        f.write_bytes(b"text")
+        f.chmod(0o644)
+        settings = make_settings(url=str(tmp_path), attributes_support=True)
+        parser = TikaParser(settings)
+
+        # Simulate pwd/grp not being available (e.g. Windows)
+        import builtins
+
+        _real_import = builtins.__import__
+
+        def _block_pwd_grp(name: str, *args: Any, **kwargs: Any) -> Any:
+            if name in ("pwd", "grp"):
+                raise ImportError(f"No module named '{name}'")
+            return _real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=_block_pwd_grp):
+            doc = parser.parse(f)
+
+        assert doc.file.attributes is not None
+        assert doc.file.attributes["permissions"] == "644"
+        # Owner and group should be numeric strings
+        assert doc.file.attributes["owner"].isdigit()
+        assert doc.file.attributes["group"].isdigit()
+
     def test_no_attributes_when_disabled(self, mock_tika: Any, tmp_path: Path) -> None:
         from fscrawler.parser import TikaParser
 

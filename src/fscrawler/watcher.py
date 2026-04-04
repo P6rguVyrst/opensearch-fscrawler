@@ -8,7 +8,6 @@ for the next polling cycle.
 
 from __future__ import annotations
 
-import fnmatch
 import logging
 import unicodedata
 from datetime import UTC, datetime
@@ -17,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from watchdog.events import FileSystemEventHandler
 
+from fscrawler.crawler import _matches_pattern
 from fscrawler.dlq import DLQ_INDEX, build_dlq_record, make_dlq_doc_id
 from fscrawler.metrics import dlq_records, documents_processed
 from fscrawler.models import make_doc_id
@@ -108,22 +108,15 @@ class FsEventHandler(FileSystemEventHandler):
             raw = "/" + path.name
         return unicodedata.normalize("NFC", raw)
 
-    @staticmethod
-    def _matches_pattern(name: str, virtual_path: str, pattern: str) -> bool:
-        """Match pattern against virtual path (if '/' in pattern) or filename."""
-        if "/" in pattern:
-            return fnmatch.fnmatch(virtual_path.lstrip("/"), pattern)
-        return fnmatch.fnmatch(name, pattern)
-
     def _matches(self, name: str, virtual_path: str = "") -> bool:
         """Return True if name passes the includes/excludes filters."""
         fs = self._settings.fs
         if fs.includes and not any(
-            self._matches_pattern(name, virtual_path, p) for p in fs.includes
+            _matches_pattern(name, virtual_path, p) for p in fs.includes
         ):
             return False
         return not any(
-            self._matches_pattern(name, virtual_path, p) for p in fs.excludes
+            _matches_pattern(name, virtual_path, p) for p in fs.excludes
         )
 
     def _index(self, path: Path) -> None:

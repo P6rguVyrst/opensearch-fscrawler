@@ -9,11 +9,9 @@ http://localhost:9998.
 from __future__ import annotations
 
 import contextlib
-import grp
 import hashlib
 import logging
 import os
-import pwd
 import re
 import stat as stat_module
 import unicodedata
@@ -78,10 +76,14 @@ def _get_file_attributes(st: os.stat_result) -> dict[str, str]:
     attrs: dict[str, str] = {}
     attrs["permissions"] = oct(stat_module.S_IMODE(st.st_mode))[2:]
     try:
+        import pwd
+
         attrs["owner"] = pwd.getpwuid(st.st_uid).pw_name
     except (KeyError, ImportError):
         attrs["owner"] = str(st.st_uid)
     try:
+        import grp
+
         attrs["group"] = grp.getgrgid(st.st_gid).gr_name
     except (KeyError, ImportError):
         attrs["group"] = str(st.st_gid)
