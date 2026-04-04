@@ -14,6 +14,7 @@ import hashlib
 import logging
 import os
 import pwd
+import re
 import stat as stat_module
 import unicodedata
 from datetime import UTC, datetime
@@ -28,6 +29,7 @@ from fscrawler.settings import FsSettings
 logger = logging.getLogger("fscrawler.parser")
 
 _DEFAULT_TIKA_URL = "http://localhost:9998"
+_STREAMING_THRESHOLD = 65536  # 64 KB — files larger than this are streamed
 
 # Mapping from Tika metadata keys to Meta dataclass fields
 _TIKA_META_MAP: dict[str, str] = {
@@ -86,6 +88,14 @@ def _get_file_attributes(st: os.stat_result) -> dict[str, str]:
     return attrs
 
 
+def _normalize_content(text: str) -> str:
+    """Collapse runs of whitespace, preserving single newlines."""
+    text = re.sub(r"[^\S\n]+", " ", text)  # horizontal whitespace -> single space
+    text = re.sub(r"\n{2,}", "\n", text)  # multiple newlines -> single
+    text = "\n".join(line.strip() for line in text.split("\n"))
+    return text.strip()
+
+
 class TikaUnavailableError(RuntimeError):
     """Raised when the Tika server cannot be reached."""
 
@@ -132,6 +142,9 @@ class TikaParser:
                 raw_content = "\n".join(raw_content)
             raw_content = str(raw_content).strip()
             content = raw_content[: fs.indexed_chars] if fs.indexed_chars > 0 else raw_content  # -1 means unlimited
+
+        if content is not None and fs.content_normalize:
+            content = _normalize_content(content)
 
         # ------------------------------------------------------------------
         # File info
@@ -266,6 +279,9 @@ class TikaParser:
                 raw_content = "\n".join(raw_content)
             raw_content = str(raw_content).strip()
             content = raw_content[: fs.indexed_chars] if fs.indexed_chars > 0 else raw_content
+
+        if content is not None and fs.content_normalize:
+            content = _normalize_content(content)
 
         now = datetime.now(tz=UTC).isoformat()
         name = Path(filename).name

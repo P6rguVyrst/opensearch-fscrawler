@@ -106,6 +106,7 @@ class FsConfig:
     checksum: str = "sha256"
     index_folders: bool = True
     tika_url: str = "http://localhost:9998"
+    content_normalize: bool = False
     keep_history: bool = False
 
 
@@ -270,6 +271,8 @@ class FsSettings:
             fs.index_folders = bool(fs_data["index_folders"])
         if "tika_url" in fs_data:
             fs.tika_url = str(fs_data["tika_url"])
+        if "content_normalize" in fs_data:
+            fs.content_normalize = bool(fs_data["content_normalize"])
 
         # --- elasticsearch ---
         es_data: dict[str, Any] = data.get("elasticsearch") or {}
