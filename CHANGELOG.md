@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Full virtual path matching:** Include/exclude patterns containing `/` now match against the full virtual path instead of filename only, fixing silent misses with upstream configs using path patterns. ([upstream context](https://github.com/dadoonet/fscrawler/issues/1300))
+- **Default excludes:** Tilde-prefixed editor temp files (`~*`) are now excluded by default, matching Java upstream behavior.
+- **`.fscrawlerignore` sentinel:** Directories containing a `.fscrawlerignore` file are skipped during crawl, including all subdirectories.
+- **Symlink cycle detection:** Crawl tracks visited `(dev, inode)` pairs to detect and break symlink loops when `follow_symlinks` is enabled.
+- **Clock skew tolerance:** `is_new_or_modified()` applies a 2-second tolerance for NFS/CIFS clock drift, preventing silently missed files.
+- **Special file detection:** Named pipes, Unix sockets, and device files are detected and skipped with a warning instead of blocking the crawl.
+- **Unicode NFC normalization:** Filenames are normalized to NFC before virtual path computation, pattern matching, and document ID generation for cross-platform consistency (macOS HFS+ NFD vs Linux ext4 NFC).
+- **`on_moved` handler:** Files moved/renamed within the crawl tree are now properly re-indexed at the new path instead of being silently lost. ([dadoonet/fscrawler#1300](https://github.com/dadoonet/fscrawler/issues/1300))
+- **Observer health-check:** Watchdog observer crashes are detected and the observer is restarted up to 5 times with logging, instead of silently exiting. ([dadoonet/fscrawler#1093](https://github.com/dadoonet/fscrawler/issues/1093))
+- **Metadata-only indexing for large files:** Files exceeding `ignore_above` now have path, size, and timestamp metadata indexed without Tika content extraction, instead of being silently dropped. ([dadoonet/fscrawler#1605](https://github.com/dadoonet/fscrawler/issues/1605))
+- **Large file streaming:** Files larger than 64 KB are streamed to Tika with chunked checksum computation, preventing OOM on large files. ([dadoonet/fscrawler#566](https://github.com/dadoonet/fscrawler/issues/566), [dadoonet/fscrawler#890](https://github.com/dadoonet/fscrawler/issues/890))
+- **File permissions as octal strings:** Permissions are stored as octal strings (e.g., `"644"`) and owner/group resolved to names via `pwd`/`grp` modules. ([dadoonet/fscrawler#956](https://github.com/dadoonet/fscrawler/issues/956), [dadoonet/fscrawler#955](https://github.com/dadoonet/fscrawler/issues/955))
+- **Content whitespace normalization:** New `fs.content_normalize` setting (default `false`) collapses excessive whitespace and blank lines in Tika-extracted content. ([dadoonet/fscrawler#802](https://github.com/dadoonet/fscrawler/issues/802))
+- **REST max body size:** New `rest.max_body_size` setting (default 100 MB) rejects oversized uploads with HTTP 413. ([dadoonet/fscrawler#1709](https://github.com/dadoonet/fscrawler/issues/1709))
+- **Template validation tests:** All index/component template JSON files are validated for structural integrity and field type consistency.
+
+### Fixed
+- **Permissions mapping type:** Changed `permissions` field in mapping template from `integer` to `keyword` to match the new octal string format. ([dadoonet/fscrawler#904](https://github.com/dadoonet/fscrawler/issues/904))
+- **Integration test cleanup:** Test indices are now deleted after integration tests complete.
+
 ## [0.4.0] - 2026-04-04
 
 ### Added
