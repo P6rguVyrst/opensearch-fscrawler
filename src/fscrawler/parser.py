@@ -259,6 +259,18 @@ class TikaParser:
             virtual = "/" + file_path.name
         virtual = unicodedata.normalize("NFC", virtual)
 
+        # Compute checksum without Tika
+        algo = self._settings.fs.checksum.lower().replace("-", "")
+        try:
+            hasher = hashlib.new(algo)
+        except ValueError:
+            logger.warning("Unknown checksum algorithm %r, falling back to sha256", self._settings.fs.checksum)
+            hasher = hashlib.sha256()
+        with open(file_path, "rb") as fh:
+            while chunk := fh.read(_STREAMING_THRESHOLD):
+                hasher.update(chunk)
+        checksum = hasher.hexdigest()
+
         file_info = FileInfo(
             filename=file_path.name,
             extension=file_path.suffix.lstrip(".").lower(),
@@ -266,6 +278,7 @@ class TikaParser:
             filesize=stat.st_size,
             indexing_date=now,
             last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
+            checksum=checksum,
             url=str(file_path),
         )
         if self._settings.fs.attributes_support:

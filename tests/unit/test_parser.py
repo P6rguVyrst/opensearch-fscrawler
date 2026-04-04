@@ -317,6 +317,22 @@ class TestParseMetadataOnly:
         doc = parser.parse_metadata_only(f)
         assert doc.file.attributes is None
 
+    def test_metadata_only_computes_checksum(self, tmp_path: Path) -> None:
+        """Checksum should be computed even for metadata-only documents."""
+        import hashlib
+        from fscrawler.parser import TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        content = b"x" * 1000
+        f = data / "large.pdf"
+        f.write_bytes(content)
+        settings = make_settings(url=str(data))
+        parser = TikaParser(settings)
+        doc = parser.parse_metadata_only(f)
+        expected = hashlib.sha256(content).hexdigest()
+        assert doc.file.checksum == expected
+
 
 # ---------------------------------------------------------------------------
 # Large file streaming (Task 11)
