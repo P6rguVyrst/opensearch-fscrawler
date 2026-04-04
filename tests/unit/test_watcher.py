@@ -309,3 +309,35 @@ class TestFsEventHandlerWalDlq:
         body = call_kwargs["body"]
         assert body["action"] == "delete"
         assert body["error_type"] == "RuntimeError"
+
+
+# ---------------------------------------------------------------------------
+# OTel metrics instrumentation
+# ---------------------------------------------------------------------------
+
+
+class TestWatcherMetrics:
+    def test_index_success_increments_documents_processed(self) -> None:
+        with patch("fscrawler.watcher.documents_processed") as mock_counter:
+            handler, client, parser = make_handler()
+            handler.on_created(_file_event(None, "/data/doc.pdf"))
+            mock_counter.add.assert_called()
+            call_args = mock_counter.add.call_args
+            assert call_args[0][1]["status"] == "success"
+
+    def test_index_failure_increments_documents_processed_error(self) -> None:
+        with patch("fscrawler.watcher.documents_processed") as mock_counter:
+            handler, client, parser = make_handler()
+            parser.parse.side_effect = RuntimeError("tika down")
+            handler.on_created(_file_event(None, "/data/doc.pdf"))
+            mock_counter.add.assert_called()
+            call_args = mock_counter.add.call_args
+            assert call_args[0][1]["status"] == "error"
+            assert call_args[0][1]["error.type"] == "RuntimeError"
+
+    def test_index_failure_increments_dlq_records(self) -> None:
+        with patch("fscrawler.watcher.dlq_records") as mock_dlq:
+            handler, client, parser = make_handler()
+            client.index.side_effect = RuntimeError("opensearch down")
+            handler.on_created(_file_event(None, "/data/doc.pdf"))
+            mock_dlq.add.assert_called_once()

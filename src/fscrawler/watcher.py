@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 from watchdog.events import FileSystemEventHandler
 
 from fscrawler.dlq import DLQ_INDEX, build_dlq_record, make_dlq_doc_id
+from fscrawler.metrics import dlq_records, documents_processed
 from fscrawler.models import make_doc_id
 
 if TYPE_CHECKING:
@@ -118,12 +119,22 @@ class FsEventHandler(FileSystemEventHandler):
                 index=target_index,
             )
             logger.info("Indexed %s", path)
+            documents_processed.add(1, {
+                "status": "success",
+                "fscrawler.job.name": job_name,
+            })
 
             if self._wal:
                 self._wal.checkpoint({doc_id})
 
         except Exception as exc:
             logger.error("Failed to index %s: %s", path, exc, exc_info=True)
+            error_type_name = type(exc).__name__
+            documents_processed.add(1, {
+                "status": "error",
+                "error.type": error_type_name,
+                "fscrawler.job.name": job_name,
+            })
             if doc_id is None:
                 doc_id = make_doc_id("/" + path.name)
             try:
@@ -144,6 +155,10 @@ class FsEventHandler(FileSystemEventHandler):
                     body=dlq_record,
                 )
                 logger.info("Wrote failed doc %s to DLQ", doc_id)
+                dlq_records.add(1, {
+                    "error.type": error_type_name,
+                    "fscrawler.job.name": job_name,
+                })
             except Exception as dlq_exc:
                 logger.error("Failed to write to DLQ for %s: %s", path, dlq_exc)
 
@@ -195,5 +210,9 @@ class FsEventHandler(FileSystemEventHandler):
                     body=dlq_record,
                 )
                 logger.info("Wrote failed delete %s to DLQ", doc_id)
+                dlq_records.add(1, {
+                    "error.type": type(exc).__name__,
+                    "fscrawler.job.name": self._settings.name,
+                })
             except Exception as dlq_exc:
                 logger.error("Failed to write to DLQ for delete %s: %s", path, dlq_exc)
