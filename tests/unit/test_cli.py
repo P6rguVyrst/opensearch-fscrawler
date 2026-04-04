@@ -295,6 +295,47 @@ class TestEnsureDlqIndices:
         assert "fscrawler_pfq" in indices
 
 
+class TestOtelEndpointFlag:
+    def test_otel_endpoint_flag_accepted(self, tmp_path: Path) -> None:
+        """The --otel-endpoint flag should be accepted without error."""
+        _write_settings(tmp_path)
+        mock_settings = _mock_settings()
+        with (
+            patch("fscrawler.client.FsCrawlerClient") as mock_cls,
+            patch("fscrawler.settings.FsSettings.from_file", return_value=mock_settings),
+            patch("fscrawler.parser.TikaParser"),
+            patch("fscrawler.cli._crawl_once"),
+            patch("fscrawler.metrics.configure_metrics") as mock_cm,
+        ):
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            result = CliRunner().invoke(
+                main,
+                [
+                    "--config_dir", str(tmp_path),
+                    "--otel-endpoint", "http://collector:4318",
+                    "test-job",
+                ],
+            )
+        assert result.exit_code == 0, result.output
+        mock_cm.assert_called_once()
+        call_kwargs = mock_cm.call_args[1]
+        assert call_kwargs["otel_endpoint"] == "http://collector:4318"
+
+    def test_log_otel_endpoint_flag_removed(self, tmp_path: Path) -> None:
+        """The old --log-otel-endpoint flag should no longer be accepted."""
+        _write_settings(tmp_path)
+        result = CliRunner().invoke(
+            main,
+            [
+                "--config_dir", str(tmp_path),
+                "--log-otel-endpoint", "http://collector:4318",
+                "test-job",
+            ],
+        )
+        assert result.exit_code != 0
+
+
 class TestUnhandledException:
     def test_unhandled_error_exits_with_code_1(self, tmp_path: Path) -> None:
         _write_settings(tmp_path)

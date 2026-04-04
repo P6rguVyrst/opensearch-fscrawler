@@ -85,10 +85,11 @@ logger = logging.getLogger("fscrawler.cli")
     help="Path to log file. Required when --log-output=file.",
 )
 @click.option(
-    "--log-otel-endpoint",
+    "--otel-endpoint",
     default=None,
-    envvar="FSCRAWLER_LOG_OTEL_ENDPOINT",
-    help="OTLP/HTTP base URL (e.g. http://collector:4318). Required when --log-output=otel.",
+    envvar="FSCRAWLER_OTEL_ENDPOINT",
+    help="OTLP/HTTP base URL (e.g. http://collector:4318). "
+         "Logs sent to {URL}/v1/logs, metrics to {URL}/v1/metrics.",
 )
 @click.version_option(__version__, prog_name="fscrawler")
 def main(
@@ -101,7 +102,7 @@ def main(
     log_format: str,
     log_output: str,
     log_file: Path | None,
-    log_otel_endpoint: str | None,
+    otel_endpoint: str | None,
 ) -> None:
     """FSCrawler — index files into OpenSearch / Elasticsearch."""
     from fscrawler.logging_config import configure_logging, install_exception_hook
@@ -111,9 +112,13 @@ def main(
         fmt=log_format,
         output=log_output,
         file_path=log_file,
-        otel_endpoint=log_otel_endpoint,
+        otel_endpoint=otel_endpoint,
     )
     install_exception_hook()
+
+    from fscrawler.metrics import configure_metrics
+
+    configure_metrics(otel_endpoint=otel_endpoint)
 
     if config_dir is None:
         config_dir = Path.home() / ".fscrawler"
@@ -134,7 +139,7 @@ def main(
 
     try:
         if rest:
-            _run_rest(settings_file, job_dir)
+            _run_rest(settings_file, job_dir, otel_endpoint=otel_endpoint)
         else:
             _run(job_name, settings_file, job_dir, loop)
     except Exception:
@@ -208,7 +213,7 @@ def _start_dlq_retry_thread(
     return thread
 
 
-def _run_rest(settings_file: Path, job_dir: Path) -> None:
+def _run_rest(settings_file: Path, job_dir: Path, *, otel_endpoint: str | None = None) -> None:
     """Load settings, start background crawler, build the FastAPI app and serve it."""
     import os
 
