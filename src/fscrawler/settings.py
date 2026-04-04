@@ -89,7 +89,7 @@ class FsConfig:
 
     url: str = ""
     includes: list[str] = field(default_factory=list)
-    excludes: list[str] = field(default_factory=list)
+    excludes: list[str] = field(default_factory=lambda: ["~*"])
     json_support: bool = False
     xml_support: bool = False
     follow_symlinks: bool = False
