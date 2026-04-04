@@ -26,8 +26,8 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from fscrawler import __version__
-from fscrawler.models import make_doc_id
 from fscrawler.client import FsCrawlerClient
+from fscrawler.models import make_doc_id
 from fscrawler.multipart import parse_multipart
 from fscrawler.parser import TikaParser
 from fscrawler.settings import FsSettings

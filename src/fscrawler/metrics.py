@@ -107,8 +107,8 @@ def configure_metrics(
     readers: list[Any] = []
 
     if enable_prometheus:
-        from prometheus_client import make_wsgi_app
         from opentelemetry.exporter.prometheus import PrometheusMetricReader
+        from prometheus_client import make_wsgi_app
 
         prometheus_reader = PrometheusMetricReader()
         readers.append(prometheus_reader)

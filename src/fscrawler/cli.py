@@ -16,16 +16,15 @@ if TYPE_CHECKING:
     from fscrawler.parser import TikaParser
     from fscrawler.settings import FsSettings
 
-from fscrawler.dlq import run_retry_cycle
-from fscrawler.metrics import wal_records
-from fscrawler.wal import WriteAheadLog
-
 import click
 import uvicorn
 from watchdog.observers import Observer
 
 from fscrawler import __version__
+from fscrawler.dlq import run_retry_cycle
+from fscrawler.metrics import wal_records
 from fscrawler.rest_server import CrawlerState, create_app
+from fscrawler.wal import WriteAheadLog
 from fscrawler.watcher import FsEventHandler
 
 logger = logging.getLogger("fscrawler.cli")
