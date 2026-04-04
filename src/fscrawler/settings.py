@@ -107,6 +107,7 @@ class FsConfig:
     index_folders: bool = True
     tika_url: str = "http://localhost:9998"
     content_normalize: bool = False
+    clock_skew_seconds: float = 2.0
     keep_history: bool = False
 
 
@@ -274,6 +275,8 @@ class FsSettings:
             fs.tika_url = str(fs_data["tika_url"])
         if "content_normalize" in fs_data:
             fs.content_normalize = bool(fs_data["content_normalize"])
+        if "clock_skew_seconds" in fs_data:
+            fs.clock_skew_seconds = float(fs_data["clock_skew_seconds"])
 
         # --- elasticsearch ---
         es_data: dict[str, Any] = data.get("elasticsearch") or {}

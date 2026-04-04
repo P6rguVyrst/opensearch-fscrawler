@@ -104,7 +104,7 @@ class LocalCrawler:
         if current_mtime > previous_mtime:
             return True  # clearly modified
         # current_mtime < previous_mtime — clock may have drifted backward
-        return (previous_mtime - current_mtime) <= _CLOCK_SKEW_SECONDS
+        return (previous_mtime - current_mtime) <= self._settings.fs.clock_skew_seconds
 
     def get_deleted_files(self) -> list[str]:
         """Return virtual paths of files deleted since the last checkpoint.
