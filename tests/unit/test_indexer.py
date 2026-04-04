@@ -654,3 +654,132 @@ class TestBulkIndexerWalIntegration:
         indexer.add(make_document("/data/test.txt"))
 
         assert len(indexer._pending) == 0  # cleared after auto-flush
+
+
+# ---------------------------------------------------------------------------
+# OTel metrics instrumentation
+# ---------------------------------------------------------------------------
+
+
+class TestIndexerMetrics:
+    def test_successful_flush_increments_documents_processed_success(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        import hashlib
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5, "errors": False,
+            "items": [{"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 201}}],
+        }
+
+        with patch("fscrawler.indexer.documents_processed") as mock_counter:
+            indexer = BulkIndexer(client, settings)
+            indexer.add(make_document("/data/test.txt"))
+            success_calls = [c for c in mock_counter.add.call_args_list if c[0][1].get("status") == "success"]
+            assert len(success_calls) >= 1
+
+    def test_failed_flush_increments_documents_processed_error(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        import hashlib
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5, "errors": True,
+            "items": [{"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 429,
+                "error": {"type": "circuit_breaking_exception", "reason": "oom"}}}],
+        }
+
+        with patch("fscrawler.indexer.documents_processed") as mock_counter:
+            indexer = BulkIndexer(client, settings)
+            indexer.add(make_document("/data/test.txt"))
+            error_calls = [c for c in mock_counter.add.call_args_list if c[0][1].get("status") == "error"]
+            assert len(error_calls) >= 1
+            assert error_calls[0][0][1]["error.type"] == "circuit_breaking_exception"
+
+    def test_bulk_duration_recorded_on_flush(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+
+        with patch("fscrawler.indexer.bulk_duration") as mock_histogram:
+            indexer = BulkIndexer(client, settings)
+            indexer.add(make_document("/data/test.txt"))
+            mock_histogram.record.assert_called_once()
+            elapsed = mock_histogram.record.call_args[0][0]
+            assert isinstance(elapsed, float) and elapsed >= 0
+            assert mock_histogram.record.call_args[0][1]["status"] == "success"
+
+    def test_bulk_exception_records_duration_with_error(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        mock_opensearch_client.bulk.side_effect = ConnectionError("cluster down")
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+
+        with patch("fscrawler.indexer.bulk_duration") as mock_histogram:
+            indexer = BulkIndexer(client, settings)
+            indexer.add(make_document("/data/test.txt"))
+            mock_histogram.record.assert_called_once()
+            attrs = mock_histogram.record.call_args[0][1]
+            assert attrs["status"] == "error"
+            assert attrs["error.type"] == "bulk_flush_error"
+
+    def test_dlq_write_increments_dlq_records(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        import hashlib
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5, "errors": True,
+            "items": [{"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 429,
+                "error": {"type": "circuit_breaking_exception", "reason": "oom"}}}],
+        }
+
+        with patch("fscrawler.indexer.dlq_records") as mock_dlq:
+            indexer = BulkIndexer(client, settings)
+            indexer.add(make_document("/data/test.txt"))
+            mock_dlq.add.assert_called_once()
+
+    def test_pfq_write_increments_pfq_records(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        import hashlib
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5, "errors": True,
+            "items": [{"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 400,
+                "error": {"type": "mapper_parsing_exception", "reason": "bad field"}}}],
+        }
+
+        with patch("fscrawler.indexer.pfq_records") as mock_pfq:
+            indexer = BulkIndexer(client, settings)
+            indexer.add(make_document("/data/test.txt"))
+            mock_pfq.add.assert_called_once()

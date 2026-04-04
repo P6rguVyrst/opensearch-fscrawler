@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +19,7 @@ from fscrawler.dlq import (
     is_retryable_error,
     make_dlq_doc_id,
 )
+from fscrawler.metrics import bulk_duration, dlq_records, documents_processed, pfq_records
 from fscrawler.models import Document, make_doc_id
 from fscrawler.settings import FsSettings
 
@@ -217,24 +219,52 @@ class BulkIndexer:
         if not self._buffer:
             return
 
+        job_name = self._settings.name
         succeeded_ids: set[str] = set()
+        t0 = time.monotonic()
         try:
             response = self._client.bulk(self._buffer)
+            elapsed = time.monotonic() - t0
             if response.get("errors"):
                 for item in response.get("items", []):
                     op = item.get("index") or item.get("delete") or {}
                     doc_id = op.get("_id", "")
                     error = op.get("error")
                     if error:
+                        error_type = error.get("type", "unknown")
+                        documents_processed.add(1, {
+                            "status": "error",
+                            "error.type": error_type,
+                            "fscrawler.job.name": job_name,
+                        })
                         self._route_failure(doc_id, error)
                     else:
                         succeeded_ids.add(doc_id)
+                        documents_processed.add(1, {
+                            "status": "success",
+                            "fscrawler.job.name": job_name,
+                        })
             else:
                 succeeded_ids = set(self._pending.keys())
                 n_ops = len(succeeded_ids)
+                for _ in range(n_ops):
+                    documents_processed.add(1, {
+                        "status": "success",
+                        "fscrawler.job.name": job_name,
+                    })
                 logger.debug("Flushed %d operations to OpenSearch.", n_ops)
+            bulk_duration.record(elapsed, {
+                "status": "success",
+                "fscrawler.job.name": job_name,
+            })
         except Exception as exc:
+            elapsed = time.monotonic() - t0
             logger.error("Bulk flush failed: %s", exc)
+            bulk_duration.record(elapsed, {
+                "status": "error",
+                "error.type": "bulk_flush_error",
+                "fscrawler.job.name": job_name,
+            })
         finally:
             if succeeded_ids and self._wal:
                 self._wal.checkpoint(succeeded_ids)
@@ -272,6 +302,10 @@ class BulkIndexer:
                     "DLQ: %s (%s) failed: %s — %s",
                     doc_id, job_name, error_type, error_message,
                 )
+                dlq_records.add(1, {
+                    "error.type": error_type,
+                    "fscrawler.job.name": job_name,
+                })
             except Exception as exc:
                 logger.error("DLQ: failed to write %s: %s", doc_id, exc)
         else:
@@ -294,5 +328,9 @@ class BulkIndexer:
                     "PFQ: %s (%s) non-retryable: %s",
                     doc_id, job_name, error_type,
                 )
+                pfq_records.add(1, {
+                    "error.type": error_type,
+                    "fscrawler.job.name": job_name,
+                })
             except Exception as exc:
                 logger.error("PFQ: failed to write %s: %s", doc_id, exc)
