@@ -354,6 +354,14 @@ class TestLargeFileStreaming:
             assert doc.file.checksum is not None
             assert doc.file.filesize == _STREAMING_THRESHOLD + 1
 
+            # Verify streaming path sends file handle, not bytes
+            call_kwargs = mock_client.put.call_args
+            content_arg = call_kwargs.kwargs.get("content") or call_kwargs[1].get("content")
+            assert not isinstance(content_arg, bytes), \
+                "Expected file handle for streaming, got bytes"
+            assert hasattr(content_arg, "read"), \
+                "Expected file-like object with read() method"
+
     def test_small_file_uses_memory_path(self, tmp_path: Path) -> None:
         from fscrawler.parser import TikaParser
 
@@ -377,6 +385,12 @@ class TestLargeFileStreaming:
             parser = TikaParser(settings)
             doc = parser.parse(small_file)
             assert doc.file.checksum is not None
+
+            # Verify memory path sends bytes directly
+            call_kwargs = mock_client.put.call_args
+            content_arg = call_kwargs.kwargs.get("content") or call_kwargs[1].get("content")
+            assert isinstance(content_arg, bytes), \
+                "Expected bytes for in-memory path, got file handle"
 
     def test_large_file_checksum_matches_small_file_checksum(self, tmp_path: Path) -> None:
         """Streaming and in-memory checksum computation must produce identical results."""
