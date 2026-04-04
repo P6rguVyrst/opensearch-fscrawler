@@ -467,7 +467,10 @@ class TestCrawlerStateThreadSafety:
         assert isinstance(state._paused_event, threading.Event)
 
 
-# Upstream: https://github.com/dadoonet/fscrawler/issues/1709
+# Inspired by: https://github.com/dadoonet/fscrawler/issues/1709
+# Note: The upstream issue is a Jackson JSON parser string-length cap in Java.
+# This Python project cannot have that bug. This middleware is a general
+# defensive measure against oversized uploads, not a direct fix for #1709.
 class TestMaxBodySize:
     """Reject uploads exceeding max body size."""
 

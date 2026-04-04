@@ -65,8 +65,8 @@ class TestTemplateValidity:
         assert isinstance(data, dict)
 
 
-# Upstream: https://github.com/dadoonet/fscrawler/issues/904
 # Upstream: https://github.com/dadoonet/fscrawler/issues/890
+# Related: https://github.com/dadoonet/fscrawler/issues/904 (store=true on filename)
 class TestMappingTypes:
     """Validate field types prevent mapping conflicts."""
 

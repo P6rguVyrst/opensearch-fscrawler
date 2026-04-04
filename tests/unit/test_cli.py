@@ -420,7 +420,11 @@ class TestOtelEndpointFlag:
 # ---------------------------------------------------------------------------
 
 
-# Upstream: https://github.com/dadoonet/fscrawler/issues/1093
+# Inspired by: https://github.com/dadoonet/fscrawler/issues/1093
+# Note: The upstream issue describes the crawl/indexing thread silently
+# hanging (likely OCR-related). This fix addresses a different failure mode:
+# the watchdog Observer thread dying. A stuck Tika call would not be
+# detected by this health-check. See ROADMAP.md for liveness monitoring plans.
 class TestObserverRestart:
     """Detect dead watchdog observer and restart up to _MAX_OBSERVER_RESTARTS times."""
 
