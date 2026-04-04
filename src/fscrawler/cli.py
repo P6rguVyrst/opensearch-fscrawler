@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from fscrawler.settings import FsSettings
 
 from fscrawler.dlq import run_retry_cycle
+from fscrawler.metrics import wal_records
 from fscrawler.wal import WriteAheadLog
 
 import click
@@ -190,6 +191,8 @@ def _recover_wal(client: FsCrawlerClient, wal: WriteAheadLog) -> None:
             return
         wal.checkpoint(doc_ids)
         logger.info("WAL: recovery complete, %d records replayed", len(records))
+        for _ in records:
+            wal_records.add(1, {"fscrawler.wal.action": "recover"})
 
 
 def _start_dlq_retry_thread(

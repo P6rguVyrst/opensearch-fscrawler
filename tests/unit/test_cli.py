@@ -283,6 +283,31 @@ class TestDlqRetryThread:
         assert call_count >= 2
 
 
+class TestWalRecoveryMetrics:
+    def test_recover_wal_increments_wal_records_recover(self) -> None:
+        from fscrawler.cli import _recover_wal
+
+        client = MagicMock()
+        client.bulk.return_value = {"errors": False, "items": []}
+        wal = MagicMock()
+        wal.is_empty = False
+        wal.read.return_value = [
+            {
+                "job_name": "test",
+                "target_index": "fscrawler_docs_test",
+                "doc_id": "abc123",
+                "action": "index",
+                "payload": {"content": "hello"},
+            },
+        ]
+
+        with patch("fscrawler.cli.wal_records") as mock_counter:
+            _recover_wal(client, wal)
+            assert mock_counter.add.call_count == 1
+            attrs = mock_counter.add.call_args[0][1]
+            assert attrs["fscrawler.wal.action"] == "recover"
+
+
 class TestEnsureDlqIndices:
     def test_ensure_dlq_pfq_indices_called(self) -> None:
         from fscrawler.cli import _ensure_dlq_indices
