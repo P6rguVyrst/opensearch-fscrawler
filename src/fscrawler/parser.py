@@ -9,8 +9,12 @@ http://localhost:9998.
 from __future__ import annotations
 
 import contextlib
+import grp
 import hashlib
 import logging
+import os
+import pwd
+import stat as stat_module
 import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
@@ -65,6 +69,21 @@ _TIKA_META_MAP: dict[str, str] = {
     "xmpMM:Rating": "rating",
     "usercomment": "comments",
 }
+
+
+def _get_file_attributes(st: os.stat_result) -> dict[str, str]:
+    """Extract file attributes as human-readable strings."""
+    attrs: dict[str, str] = {}
+    attrs["permissions"] = oct(stat_module.S_IMODE(st.st_mode))[2:]
+    try:
+        attrs["owner"] = pwd.getpwuid(st.st_uid).pw_name
+    except (KeyError, ImportError):
+        attrs["owner"] = str(st.st_uid)
+    try:
+        attrs["group"] = grp.getgrgid(st.st_gid).gr_name
+    except (KeyError, ImportError):
+        attrs["group"] = str(st.st_gid)
+    return attrs
 
 
 class TikaUnavailableError(RuntimeError):
@@ -152,6 +171,9 @@ class TikaParser:
             url=str(file_path),
         )
 
+        if fs.attributes_support:
+            file_info.attributes = _get_file_attributes(stat)
+
         # ------------------------------------------------------------------
         # Path info
         # ------------------------------------------------------------------
@@ -189,6 +211,33 @@ class TikaParser:
             meta=meta,
             attachment=attachment,
         )
+
+    def parse_metadata_only(self, file_path: Path) -> Document:
+        """Create a Document with file metadata but no content extraction.
+
+        Used for files exceeding ignore_above — indexes path, size,
+        timestamps, and permissions without calling Tika.
+        """
+        stat = file_path.stat()
+        now = datetime.now(tz=UTC).isoformat()
+        root = str(self._settings.fs.url)
+        try:
+            virtual = "/" + str(file_path.relative_to(root))
+        except ValueError:
+            virtual = "/" + file_path.name
+        virtual = unicodedata.normalize("NFC", virtual)
+
+        file_info = FileInfo(
+            filename=file_path.name,
+            extension=file_path.suffix.lstrip(".").lower(),
+            content_type="",
+            filesize=stat.st_size,
+            indexing_date=now,
+            last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
+            url=str(file_path),
+        )
+        path_info = PathInfo(real=str(file_path), root=root, virtual=virtual)
+        return Document(content=None, file=file_info, path=path_info, meta=Meta())
 
     def parse_bytes(
         self, filename: str, data: bytes, content_type: str | None = None

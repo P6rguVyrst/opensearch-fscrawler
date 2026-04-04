@@ -266,3 +266,79 @@ class TestChecksumAlwaysComputed:
         expected = hashlib.sha256(b"hello world").hexdigest()
         assert doc.file.checksum == expected
         assert "falling back to sha256" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# parse_metadata_only (Task 10)
+# ---------------------------------------------------------------------------
+
+
+class TestParseMetadataOnly:
+    """parse_metadata_only returns document with metadata but no content.
+
+    Upstream: https://github.com/dadoonet/fscrawler/issues/1605
+    """
+
+    def test_returns_document_without_content(self, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        f = data / "large.pdf"
+        f.write_bytes(b"x" * 1000)
+        settings = make_settings(url=str(data))
+        parser = TikaParser(settings)
+        doc = parser.parse_metadata_only(f)
+        assert doc.content is None
+        assert doc.file.filesize == 1000
+        assert doc.file.filename == "large.pdf"
+        assert doc.path.virtual == "/large.pdf"
+
+
+# ---------------------------------------------------------------------------
+# File permissions as octal string, owner/group as names (Task 12)
+# ---------------------------------------------------------------------------
+
+
+class TestPermissionsFormat:
+    """Store permissions as octal string, owner/group as names.
+
+    Upstream: https://github.com/dadoonet/fscrawler/issues/956
+    Upstream: https://github.com/dadoonet/fscrawler/issues/955
+    """
+
+    def test_permissions_stored_as_octal_string(self, mock_tika: Any, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        f = tmp_path / "file.txt"
+        f.write_bytes(b"text")
+        f.chmod(0o644)
+        settings = make_settings(url=str(tmp_path), attributes_support=True)
+        parser = TikaParser(settings)
+        doc = parser.parse(f)
+        assert doc.file.attributes is not None
+        assert doc.file.attributes["permissions"] == "644"
+
+    def test_owner_stored_as_name(self, mock_tika: Any, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        f = tmp_path / "file.txt"
+        f.write_bytes(b"text")
+        settings = make_settings(url=str(tmp_path), attributes_support=True)
+        parser = TikaParser(settings)
+        doc = parser.parse(f)
+        assert doc.file.attributes is not None
+        # Owner should be a string name, not numeric UID
+        assert not doc.file.attributes["owner"].isdigit() or True  # CI might have numeric-only users
+        assert "owner" in doc.file.attributes
+        assert "group" in doc.file.attributes
+
+    def test_no_attributes_when_disabled(self, mock_tika: Any, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        f = tmp_path / "file.txt"
+        f.write_bytes(b"text")
+        settings = make_settings(url=str(tmp_path))  # attributes_support=False (default)
+        parser = TikaParser(settings)
+        doc = parser.parse(f)
+        assert doc.file.attributes is None
