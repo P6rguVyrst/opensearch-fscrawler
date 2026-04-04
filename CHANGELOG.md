@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-04
+
+### Added
+- **Write-Ahead Log (WAL):** Every document is fsync'd to a local JSONL log before OpenSearch calls, providing crash-recovery durability. On startup, un-checkpointed WAL records are replayed via bulk API.
+- **Dead Letter Queue (DLQ):** Failed documents are written to a dedicated `fscrawler_dlq` OpenSearch index with exponential-backoff retry (schedule: 60s, 120s, 240s, 480s, 960s). A background thread drains due records on a configurable interval.
+- **Permanent Failure Queue (PFQ):** Non-retryable errors (e.g., `mapper_parsing_exception`) and max-retries-exceeded documents are promoted to `fscrawler_pfq` for human triage.
+- **Error classification:** Retryable vs non-retryable error types determine DLQ vs PFQ routing. Retryable: `connection_error`, `timeout`, `circuit_breaking_exception`, `cluster_block_exception`. Non-retryable: `mapper_parsing_exception`, `illegal_argument_exception`, `version_conflict_engine_exception`.
+- **OpenTelemetry metrics instrumentation** with 6 instruments:
+  - `fscrawler.documents.processed` (Counter) — throughput + error rate with `status` and `error.type` attributes for clean SLI calculation
+  - `fscrawler.dlq.records` (Counter) — DLQ entries by error class
+  - `fscrawler.pfq.records` (Counter) — permanent failures
+  - `fscrawler.dlq.retries` (Counter) — retry effectiveness (`success`/`failure` outcome)
+  - `fscrawler.wal.records` (Counter) — WAL operations (`append`/`checkpoint`/`recover`)
+  - `fscrawler.bulk.duration` (Histogram) — bulk flush latency as scaling signal
+- **Prometheus `/metrics` endpoint** on REST server via `opentelemetry-exporter-prometheus`, scrapable by Prometheus and Grafana Alloy
+- **OTLP/HTTP metrics push** via `--otel-endpoint` flag for collector-based setups
+- `--otel-endpoint` CLI flag — unified OTLP/HTTP base URL for logs and metrics (replaces `--log-otel-endpoint`)
+- `client.search()` and `client.index_raw()` methods for DLQ/PFQ support
+- DLQ query body stored as dedicated JSON file (`src/fscrawler/_queries/dlq_due_records.json`)
+- DLQ settings: `max_retries`, `retry_interval`, `backoff_multiplier`, `max_backoff`, `check_interval`
+- Design specs for DLQ/WAL and OTel metrics in `docs/specs/`
+
+### Fixed
+- Watcher `_index()` no longer raises `UnboundLocalError` when `doc.to_dict()` fails ��� `doc_body` initialized before try block
+- Watcher `_delete()` now writes to DLQ on failure instead of silently logging
+- DLQ retry backoff exponent off-by-one corrected — first retry delay is now 60s (not 120s)
+
+### Changed
+- **Breaking:** `--log-otel-endpoint` / `FSCRAWLER_LOG_OTEL_ENDPOINT` removed (unreleased in 0.3.0). Use `--otel-endpoint` / `FSCRAWLER_OTEL_ENDPOINT` instead.
+- `BulkIndexer._flush_locked()` now parses per-item bulk response errors and routes failures to DLQ or PFQ based on error classification
+- WAL integrated into `BulkIndexer`, `FsEventHandler`, and CLI startup
+
+### Dependencies
+- `opentelemetry-api>=1.20`
+- `opentelemetry-sdk>=1.20`
+- `opentelemetry-exporter-prometheus>=0.50b0`
+- `opentelemetry-exporter-otlp-proto-http>=1.20`
+
 ## [0.3.0] - 2026-04-03
 
 ### Added
