@@ -433,18 +433,28 @@ class TestPermissionsFormat:
         assert doc.file.attributes["permissions"] == "644"
 
     def test_owner_stored_as_name(self, mock_tika: Any, tmp_path: Path) -> None:
+        from unittest.mock import patch, MagicMock
         from fscrawler.parser import TikaParser
 
         f = tmp_path / "file.txt"
         f.write_bytes(b"text")
         settings = make_settings(url=str(tmp_path), attributes_support=True)
         parser = TikaParser(settings)
-        doc = parser.parse(f)
+
+        mock_pw = MagicMock()
+        mock_pw.pw_name = "testuser"
+        mock_gr = MagicMock()
+        mock_gr.gr_name = "testgroup"
+
+        with (
+            patch("pwd.getpwuid", return_value=mock_pw),
+            patch("grp.getgrgid", return_value=mock_gr),
+        ):
+            doc = parser.parse(f)
+
         assert doc.file.attributes is not None
-        # Owner should be a string name, not numeric UID
-        assert not doc.file.attributes["owner"].isdigit() or True  # CI might have numeric-only users
-        assert "owner" in doc.file.attributes
-        assert "group" in doc.file.attributes
+        assert doc.file.attributes["owner"] == "testuser"
+        assert doc.file.attributes["group"] == "testgroup"
 
     def test_falls_back_to_numeric_ids_when_pwd_grp_unavailable(
         self, mock_tika: Any, tmp_path: Path
@@ -474,6 +484,30 @@ class TestPermissionsFormat:
         assert doc.file.attributes is not None
         assert doc.file.attributes["permissions"] == "644"
         # Owner and group should be numeric strings
+        assert doc.file.attributes["owner"].isdigit()
+        assert doc.file.attributes["group"].isdigit()
+
+    def test_falls_back_to_numeric_when_user_not_found(
+        self, mock_tika: Any, tmp_path: Path
+    ) -> None:
+        """KeyError from getpwuid/getgrgid falls back to numeric UID/GID."""
+        from unittest.mock import patch
+        from fscrawler.parser import TikaParser
+
+        f = tmp_path / "file.txt"
+        f.write_bytes(b"text")
+        f.chmod(0o644)
+        settings = make_settings(url=str(tmp_path), attributes_support=True)
+        parser = TikaParser(settings)
+
+        with (
+            patch("pwd.getpwuid", side_effect=KeyError("no such user")),
+            patch("grp.getgrgid", side_effect=KeyError("no such group")),
+        ):
+            doc = parser.parse(f)
+
+        assert doc.file.attributes is not None
+        assert doc.file.attributes["permissions"] == "644"
         assert doc.file.attributes["owner"].isdigit()
         assert doc.file.attributes["group"].isdigit()
 
