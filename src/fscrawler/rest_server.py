@@ -98,6 +98,7 @@ def create_app(
             allow_headers=["*"],
         )
 
+    # S5: Check body size for both Content-Length and chunked transfer encoding.
     @app.middleware("http")
     async def check_body_size(request: Request, call_next):  # type: ignore[no-untyped-def]
         content_length = request.headers.get("content-length")
@@ -106,6 +107,15 @@ def create_app(
                 status_code=413,
                 content={"error": "Request body too large"},
             )
+        # For methods that carry a body but lack Content-Length (e.g. chunked
+        # transfer encoding), read the actual body and check its size.
+        if request.method not in ("GET", "HEAD", "OPTIONS") and not content_length:
+            body = await request.body()
+            if len(body) > settings.rest.max_body_size:
+                return JSONResponse(
+                    status_code=413,
+                    content={"error": "Request body too large"},
+                )
         return await call_next(request)
 
     # Mount Prometheus /metrics endpoint

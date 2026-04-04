@@ -479,6 +479,17 @@ class TestMaxBodySize:
         response = tc.post("/_document", content=body, headers=headers)
         assert response.status_code == 413
 
+    def test_chunked_upload_exceeding_limit_returns_413(self) -> None:
+        """Chunked requests (no Content-Length) exceeding max_body_size must be rejected."""
+        settings = make_settings(rest={"url": "http://127.0.0.1:8080", "max_body_size": "1kb"})
+        tc = make_app(settings=settings)
+        headers, body = _multipart_body(data=b"x" * 2048)
+        # Remove content-length to simulate chunked transfer encoding
+        headers.pop("content-length", None)
+        headers["transfer-encoding"] = "chunked"
+        response = tc.post("/_document", content=body, headers=headers)
+        assert response.status_code == 413
+
     def test_upload_within_limit_succeeds(self) -> None:
         settings = make_settings(rest={"url": "http://127.0.0.1:8080", "max_body_size": "1mb"})
         tc = make_app(settings=settings)
