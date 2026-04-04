@@ -118,6 +118,10 @@ src/fscrawler/
 └── indexer.py    Bulk buffering/flushing processor
 ```
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned improvements and known limitations.
+
 ## Security
 
 This prototype has known security issues — including no REST authentication,

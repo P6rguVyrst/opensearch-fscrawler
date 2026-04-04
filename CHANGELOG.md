@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-04
+
+### Added
+- **Write-Ahead Log (WAL):** Every document is fsync'd to a local JSONL log before OpenSearch calls, providing crash-recovery durability. On startup, un-checkpointed WAL records are replayed via bulk API.
+- **Dead Letter Queue (DLQ):** Failed documents are written to a dedicated `fscrawler_dlq` OpenSearch index with exponential-backoff retry (schedule: 60s, 120s, 240s, 480s, 960s). A background thread drains due records on a configurable interval.
+- **Permanent Failure Queue (PFQ):** Non-retryable errors (e.g., `mapper_parsing_exception`) and max-retries-exceeded documents are promoted to `fscrawler_pfq` for human triage.
+- **Error classification:** Retryable vs non-retryable error types determine DLQ vs PFQ routing.
+- **OpenTelemetry metrics instrumentation** with 6 instruments:
+  - `fscrawler.documents.processed` (Counter) — throughput + error rate with `status` and `error.type` attributes
+  - `fscrawler.dlq.records` (Counter) — DLQ entries by error class
+  - `fscrawler.pfq.records` (Counter) — permanent failures
+  - `fscrawler.dlq.retries` (Counter) — retry effectiveness (`success`/`failure` outcome)
+  - `fscrawler.wal.records` (Counter) — WAL operations (`append`/`checkpoint`/`recover`)
+  - `fscrawler.bulk.duration` (Histogram) — bulk flush latency
+- **Prometheus `/metrics` endpoint** on REST server, scrapable by Prometheus and Grafana Alloy
+- **OTLP/HTTP metrics push** via `--otel-endpoint` flag for collector-based setups
+- DLQ settings: `max_retries`, `retry_interval`, `backoff_multiplier`, `max_backoff`, `check_interval`
+
+### Changed
+- **Breaking:** `--log-otel-endpoint` / `FSCRAWLER_LOG_OTEL_ENDPOINT` renamed to `--otel-endpoint` / `FSCRAWLER_OTEL_ENDPOINT`
+- Bulk errors now parsed per-item and routed to DLQ (retryable) or PFQ (non-retryable) instead of being logged and dropped
+
+### Dependencies
+- `opentelemetry-api>=1.20`
+- `opentelemetry-sdk>=1.20`
+- `opentelemetry-exporter-prometheus>=0.50b0`
+- `opentelemetry-exporter-otlp-proto-http>=1.20`
+
 ## [0.3.0] - 2026-04-03
 
 ### Added

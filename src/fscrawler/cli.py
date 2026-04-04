@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
@@ -21,7 +21,10 @@ import uvicorn
 from watchdog.observers import Observer
 
 from fscrawler import __version__
+from fscrawler.dlq import run_retry_cycle
+from fscrawler.metrics import wal_records
 from fscrawler.rest_server import CrawlerState, create_app
+from fscrawler.wal import WriteAheadLog
 from fscrawler.watcher import FsEventHandler
 
 logger = logging.getLogger("fscrawler.cli")
@@ -82,10 +85,11 @@ logger = logging.getLogger("fscrawler.cli")
     help="Path to log file. Required when --log-output=file.",
 )
 @click.option(
-    "--log-otel-endpoint",
+    "--otel-endpoint",
     default=None,
-    envvar="FSCRAWLER_LOG_OTEL_ENDPOINT",
-    help="OTLP/HTTP base URL (e.g. http://collector:4318). Required when --log-output=otel.",
+    envvar="FSCRAWLER_OTEL_ENDPOINT",
+    help="OTLP/HTTP base URL (e.g. http://collector:4318). "
+         "Logs sent to {URL}/v1/logs, metrics to {URL}/v1/metrics.",
 )
 @click.version_option(__version__, prog_name="fscrawler")
 def main(
@@ -98,7 +102,7 @@ def main(
     log_format: str,
     log_output: str,
     log_file: Path | None,
-    log_otel_endpoint: str | None,
+    otel_endpoint: str | None,
 ) -> None:
     """FSCrawler — index files into OpenSearch / Elasticsearch."""
     from fscrawler.logging_config import configure_logging, install_exception_hook
@@ -108,9 +112,13 @@ def main(
         fmt=log_format,
         output=log_output,
         file_path=log_file,
-        otel_endpoint=log_otel_endpoint,
+        otel_endpoint=otel_endpoint,
     )
     install_exception_hook()
+
+    from fscrawler.metrics import configure_metrics
+
+    configure_metrics(otel_endpoint=otel_endpoint, enable_prometheus=rest)
 
     if config_dir is None:
         config_dir = Path.home() / ".fscrawler"
@@ -131,7 +139,7 @@ def main(
 
     try:
         if rest:
-            _run_rest(settings_file, job_dir)
+            _run_rest(settings_file, job_dir, otel_endpoint=otel_endpoint)
         else:
             _run(job_name, settings_file, job_dir, loop)
     except Exception:
@@ -139,7 +147,89 @@ def main(
         sys.exit(1)
 
 
-def _run_rest(settings_file: Path, job_dir: Path) -> None:
+def _ensure_dlq_indices(client: FsCrawlerClient) -> None:
+    """Ensure the DLQ and PFQ indices exist."""
+    from fscrawler.dlq import DLQ_INDEX, PFQ_INDEX
+
+    client.ensure_index(DLQ_INDEX)
+    client.ensure_index(PFQ_INDEX)
+
+
+def _recover_wal(client: FsCrawlerClient, wal: WriteAheadLog) -> None:
+    """Replay un-checkpointed WAL records on startup."""
+    if wal.is_empty:
+        return
+
+    records = wal.read()
+    logger.info("WAL: recovering %d records from %s", len(records), wal.path)
+
+    operations: list[dict[str, Any]] = []
+    doc_ids: set[str] = set()
+    for record in records:
+        doc_id = record["doc_id"]
+        target_index = record["target_index"]
+        action = record["action"]
+        payload = record.get("payload")
+        pipeline = record.get("pipeline")
+
+        if action == "index" and payload:
+            bulk_action: dict[str, Any] = {"index": {"_index": target_index, "_id": doc_id}}
+            if pipeline:
+                bulk_action["index"]["pipeline"] = pipeline
+            operations.append(bulk_action)
+            operations.append(payload)
+        elif action == "delete":
+            operations.append({"delete": {"_index": target_index, "_id": doc_id}})
+        doc_ids.add(doc_id)
+
+    if operations:
+        try:
+            response = client.bulk(operations)
+        except Exception as exc:
+            logger.error("WAL: recovery bulk failed: %s", exc)
+            return
+
+        succeeded_ids = set(doc_ids)
+        if response.get("errors"):
+            for item in response.get("items", []):
+                op = item.get("index") or item.get("delete") or {}
+                if op.get("error"):
+                    failed_id = op.get("_id", "")
+                    succeeded_ids.discard(failed_id)
+                    logger.warning("WAL: recovery failed for %s: %s", failed_id, op["error"])
+
+        if succeeded_ids:
+            wal.checkpoint(succeeded_ids)
+            logger.info("WAL: recovery complete, %d/%d records succeeded", len(succeeded_ids), len(records))
+        else:
+            logger.warning("WAL: all %d recovery records failed, nothing checkpointed", len(records))
+
+        for _ in range(len(succeeded_ids)):
+            wal_records.add(1, {"fscrawler.wal.action": "recover"})
+
+
+def _start_dlq_retry_thread(
+    client: FsCrawlerClient,
+    config: Any,
+    stop_event: threading.Event,
+    job_name: str | None = None,
+) -> threading.Thread:
+    """Start a daemon thread that periodically drains the DLQ."""
+
+    def _loop() -> None:
+        while not stop_event.is_set():
+            try:
+                run_retry_cycle(client, config, job_name=job_name)
+            except Exception as exc:
+                logger.error("DLQ retry thread error: %s", exc)
+            stop_event.wait(timeout=config.check_interval)
+
+    thread = threading.Thread(target=_loop, daemon=True, name="fscrawler-dlq-retry")
+    thread.start()
+    return thread
+
+
+def _run_rest(settings_file: Path, job_dir: Path, *, otel_endpoint: str | None = None) -> None:
     """Load settings, start background crawler, build the FastAPI app and serve it."""
     import os
 
@@ -158,13 +248,21 @@ def _run_rest(settings_file: Path, job_dir: Path) -> None:
     if settings.fs.keep_history:
         client.ensure_index(settings.elasticsearch.index_history)
 
+    _ensure_dlq_indices(client)
+
+    wal = WriteAheadLog(job_dir / ".wal", job_name=settings.name)
+    _recover_wal(client, wal)
+
+    stop_event = threading.Event()
+    _start_dlq_retry_thread(client, settings.elasticsearch.dlq, stop_event, job_name=settings.name)
+
     crawler_state = CrawlerState()
 
     # Background crawler thread — mirrors Java's dual REST+crawl mode.
     # The thread is a daemon so it exits automatically when uvicorn shuts down.
     bg_thread = threading.Thread(
         target=_crawler_loop,
-        args=(settings, client, job_dir, crawler_state),
+        args=(settings, client, job_dir, crawler_state, wal),
         daemon=True,
         name="fscrawler-bg",
     )
@@ -189,6 +287,7 @@ def _crawler_loop(
     client: FsCrawlerClient,
     job_dir: Path,
     crawler_state: CrawlerState,
+    wal: WriteAheadLog | None = None,
 ) -> None:
     """Initial full scan followed by watchdog event-driven indexing.
 
@@ -204,12 +303,12 @@ def _crawler_loop(
 
     # Initial scan — index everything already in the directory.
     try:
-        _crawl_once(settings, client, parser, job_dir)
+        _crawl_once(settings, client, parser, job_dir, wal=wal)
     except Exception as exc:
         logger.error("Initial crawl failed: %s", exc, exc_info=True)
 
     # Start watchdog observer for real-time event-driven indexing.
-    handler = FsEventHandler(settings, client, parser, crawler_state)
+    handler = FsEventHandler(settings, client, parser, crawler_state, wal=wal)
     observer = Observer()
     observer.schedule(handler, str(settings.fs.url), recursive=True)
     observer.start()
@@ -228,6 +327,7 @@ def _crawl_once(
     client: FsCrawlerClient,
     parser: TikaParser,
     job_dir: Path,
+    wal: WriteAheadLog | None = None,
 ) -> None:
     """Execute one full crawl pass: scan, index new/modified, delete removed."""
     from fscrawler.crawler import LocalCrawler
@@ -237,7 +337,7 @@ def _crawl_once(
     crawler = LocalCrawler(settings, config_dir=job_dir)
     root = Path(settings.fs.url)
 
-    with BulkIndexer(client, settings) as indexer:
+    with BulkIndexer(client, settings, wal=wal) as indexer:
         for folder_path in crawler.scan_folders():
             rel = folder_path.relative_to(root)
             virtual = "/" if str(rel) == "." else "/" + rel.as_posix()
@@ -288,14 +388,25 @@ def _run(job_name: str, settings_file: Path, job_dir: Path, loop: bool) -> None:
     if settings.fs.keep_history:
         client.ensure_index(settings.elasticsearch.index_history)
 
+    _ensure_dlq_indices(client)
+
+    wal = WriteAheadLog(job_dir / ".wal", job_name=settings.name)
+    _recover_wal(client, wal)
+
     parser = TikaParser(settings, tika_url=settings.fs.tika_url)
 
     # Always do an initial full scan
-    _crawl_once(settings, client, parser, job_dir)
+    _crawl_once(settings, client, parser, job_dir, wal=wal)
+
+    if not loop:
+        logger.info("Single-run mode — DLQ retry thread not started. Use --loop or --rest for automatic retries.")
 
     if loop:
+        stop_event = threading.Event()
+        _start_dlq_retry_thread(client, settings.elasticsearch.dlq, stop_event, job_name=settings.name)
+
         # Stay alive with watchdog event-driven indexing
-        handler = FsEventHandler(settings, client, parser, CrawlerState())
+        handler = FsEventHandler(settings, client, parser, CrawlerState(), wal=wal)
         observer = Observer()
         observer.schedule(handler, str(settings.fs.url), recursive=True)
         observer.start()
@@ -304,6 +415,7 @@ def _run(job_name: str, settings_file: Path, job_dir: Path, loop: bool) -> None:
             while observer.is_alive():
                 time.sleep(1)
         finally:
+            stop_event.set()
             observer.stop()
             observer.join()
 

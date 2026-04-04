@@ -6,14 +6,26 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from fscrawler.client import FsCrawlerClient
+from fscrawler.dlq import (
+    DLQ_INDEX,
+    PFQ_INDEX,
+    build_dlq_record,
+    build_pfq_record,
+    is_retryable_error,
+    make_dlq_doc_id,
+)
+from fscrawler.metrics import bulk_duration, dlq_records, documents_processed, pfq_records
 from fscrawler.models import Document, make_doc_id
 from fscrawler.settings import FsSettings
 
 if TYPE_CHECKING:
     from fscrawler.models import FolderDocument
+    from fscrawler.wal import WriteAheadLog
 
 logger = logging.getLogger("fscrawler.indexer")
 
@@ -28,11 +40,18 @@ class BulkIndexer:
                 indexer.add(doc)
     """
 
-    def __init__(self, client: FsCrawlerClient, settings: FsSettings) -> None:
+    def __init__(
+        self,
+        client: FsCrawlerClient,
+        settings: FsSettings,
+        wal: WriteAheadLog | None = None,
+    ) -> None:
         self._client = client
         self._settings = settings
+        self._wal = wal
         self._buffer: list[dict[str, Any]] = []
         self._buffer_bytes: int = 0
+        self._pending: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
 
         es = settings.elasticsearch
@@ -63,6 +82,16 @@ class BulkIndexer:
         doc_id = self._make_id(doc.path.virtual)
         doc_body = doc.to_dict()
 
+        if self._wal:
+            self._wal.append({
+                "ts": datetime.now(tz=UTC).isoformat(),
+                "job_name": self._settings.name,
+                "target_index": self._index,
+                "doc_id": doc_id,
+                "action": "index",
+                "payload": doc_body,
+            })
+
         # History: check for existing doc and archive if content changed
         if self._keep_history:
             self._archive_if_changed(doc_id, doc.file.checksum)
@@ -73,6 +102,13 @@ class BulkIndexer:
         estimated = len(json.dumps(doc_body, default=str).encode("utf-8"))
 
         with self._lock:
+            self._pending[doc_id] = {
+                "job_name": self._settings.name,
+                "target_index": self._index,
+                "action": "index",
+                "payload": doc_body,
+                "source_path": doc.path.real,
+            }
             self._buffer.append(action)
             self._buffer.append(doc_body)
             self._buffer_bytes += estimated
@@ -104,6 +140,15 @@ class BulkIndexer:
         """Queue a delete operation for the given virtual path."""
         doc_id = self._make_id(virtual_path)
 
+        if self._wal:
+            self._wal.append({
+                "ts": datetime.now(tz=UTC).isoformat(),
+                "job_name": self._settings.name,
+                "target_index": self._index,
+                "doc_id": doc_id,
+                "action": "delete",
+            })
+
         # History: archive the deleted document
         if self._keep_history:
             self._archive_if_changed(doc_id, "deleted")
@@ -111,6 +156,13 @@ class BulkIndexer:
         action: dict[str, Any] = {"delete": {"_index": self._index, "_id": doc_id}}
 
         with self._lock:
+            self._pending[doc_id] = {
+                "job_name": self._settings.name,
+                "target_index": self._index,
+                "action": "delete",
+                "payload": None,
+                "source_path": virtual_path,
+            }
             self._buffer.append(action)
             # Check whether we've hit bulk_size (delete counts as one operation)
             if len(self._buffer) >= self._bulk_size:
@@ -164,15 +216,119 @@ class BulkIndexer:
         """Send buffered operations.  Must be called with self._lock held."""
         if not self._buffer:
             return
+
+        job_name = self._settings.name
+        succeeded_ids: set[str] = set()
+        t0 = time.monotonic()
         try:
             response = self._client.bulk(self._buffer)
+            elapsed = time.monotonic() - t0
             if response.get("errors"):
-                logger.error("Bulk indexing had errors: %s", response)
+                for item in response.get("items", []):
+                    op = item.get("index") or item.get("delete") or {}
+                    doc_id = op.get("_id", "")
+                    error = op.get("error")
+                    if error:
+                        error_type = error.get("type", "unknown")
+                        documents_processed.add(1, {
+                            "status": "error",
+                            "error.type": error_type,
+                            "fscrawler.job.name": job_name,
+                        })
+                        self._route_failure(doc_id, error)
+                    else:
+                        succeeded_ids.add(doc_id)
+                        documents_processed.add(1, {
+                            "status": "success",
+                            "fscrawler.job.name": job_name,
+                        })
             else:
-                n_ops = len([op for op in self._buffer if "index" in op or "delete" in op])
+                succeeded_ids = set(self._pending.keys())
+                n_ops = len(succeeded_ids)
+                for _ in range(n_ops):
+                    documents_processed.add(1, {
+                        "status": "success",
+                        "fscrawler.job.name": job_name,
+                    })
                 logger.debug("Flushed %d operations to OpenSearch.", n_ops)
+            bulk_duration.record(elapsed, {
+                "status": "success",
+                "fscrawler.job.name": job_name,
+            })
         except Exception as exc:
+            elapsed = time.monotonic() - t0
             logger.error("Bulk flush failed: %s", exc)
+            bulk_duration.record(elapsed, {
+                "status": "error",
+                "error.type": "bulk_flush_error",
+                "fscrawler.job.name": job_name,
+            })
         finally:
+            if succeeded_ids and self._wal:
+                self._wal.checkpoint(succeeded_ids)
             self._buffer = []
             self._buffer_bytes = 0
+            self._pending = {}
+
+    def _route_failure(self, doc_id: str, error: dict[str, Any]) -> None:
+        """Route a failed bulk item to DLQ (retryable) or PFQ (non-retryable)."""
+        error_type = error.get("type", "unknown")
+        error_message = error.get("reason", str(error))
+        meta = self._pending.get(doc_id, {})
+        job_name = meta.get("job_name", self._settings.name)
+        target_index = meta.get("target_index", self._index)
+        action = meta.get("action", "index")
+        payload = meta.get("payload")
+        source_path = meta.get("source_path", "")
+        dlq_doc_id = make_dlq_doc_id(job_name, doc_id)
+
+        if is_retryable_error(error_type):
+            record = build_dlq_record(
+                job_name=job_name,
+                target_index=target_index,
+                doc_id=doc_id,
+                action=action,
+                payload=payload,
+                error_message=error_message,
+                error_type=error_type,
+                source_path=source_path,
+                retry_interval=self._settings.elasticsearch.dlq.retry_interval,
+            )
+            try:
+                self._client.index_raw(index=DLQ_INDEX, doc_id=dlq_doc_id, body=record)
+                logger.warning(
+                    "DLQ: %s (%s) failed: %s — %s",
+                    doc_id, job_name, error_type, error_message,
+                )
+                dlq_records.add(1, {
+                    "error.type": error_type,
+                    "fscrawler.job.name": job_name,
+                })
+            except Exception as exc:
+                logger.error("DLQ: failed to write %s: %s", doc_id, exc)
+        else:
+            record = build_dlq_record(
+                job_name=job_name,
+                target_index=target_index,
+                doc_id=doc_id,
+                action=action,
+                payload=payload,
+                error_message=error_message,
+                error_type=error_type,
+                source_path=source_path,
+            )
+            pfq_record = build_pfq_record(
+                record, final_error=f"non-retryable: {error_type} — {error_message}"
+            )
+            try:
+                self._client.index_raw(index=PFQ_INDEX, doc_id=dlq_doc_id, body=pfq_record)
+                logger.warning(
+                    "PFQ: %s (%s) non-retryable: %s",
+                    doc_id, job_name, error_type,
+                )
+                pfq_records.add(1, {
+                    "error.type": error_type,
+                    "fscrawler.job.name": job_name,
+                })
+            except Exception as exc:
+                logger.error("PFQ: failed to write %s: %s", doc_id, exc)

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "opensearch-fscrawler"
-version = "0.3.0"
+version = "0.4.0"
 description = "File system crawler for OpenSearch / Elasticsearch — Python rewrite of FSCrawler"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -39,6 +39,10 @@ dependencies = [
     "httpx>=0.27",
     "python-dateutil>=2.9",
     "watchdog>=6.0.0",
+    "opentelemetry-api>=1.20",
+    "opentelemetry-sdk>=1.20",
+    "opentelemetry-exporter-prometheus>=0.50b0",
+    "opentelemetry-exporter-otlp-proto-http>=1.20",
 ]
 
 [project.urls]

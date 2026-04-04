@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call, patch
 
 from tests.conftest import make_document, make_settings
 
@@ -463,3 +463,432 @@ class TestBulkErrorHandling:
 
         # Buffer should be cleared after failed flush
         assert len(indexer._buffer) == 0
+
+
+# ---------------------------------------------------------------------------
+# WAL + DLQ integration
+# ---------------------------------------------------------------------------
+
+
+class TestBulkIndexerWalIntegration:
+    """Tests for WAL durability and DLQ/PFQ error routing in BulkIndexer."""
+
+    def test_add_writes_to_wal(self, mock_opensearch_client: MagicMock) -> None:
+        """When WAL is provided, add() appends a record to the WAL."""
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 100})
+        client = FsCrawlerClient(settings)
+        wal = MagicMock()
+
+        indexer = BulkIndexer(client, settings, wal=wal)
+        doc = make_document("/data/test.txt")
+        indexer.add(doc)
+
+        wal.append.assert_called_once()
+        record = wal.append.call_args[0][0]
+        assert record["job_name"] == "test"
+        assert record["action"] == "index"
+        assert record["target_index"] == settings.elasticsearch.index
+        assert "doc_id" in record
+        assert "payload" in record
+        assert "ts" in record
+
+    def test_successful_flush_checkpoints_wal(self, mock_opensearch_client: MagicMock) -> None:
+        """After a successful bulk flush, WAL is checkpointed with succeeded doc IDs."""
+        import hashlib
+
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        wal = MagicMock()
+
+        doc = make_document("/data/test.txt")
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+
+        # Mock bulk response with matching item
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5,
+            "errors": False,
+            "items": [
+                {"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 201, "result": "created"}}
+            ],
+        }
+
+        indexer = BulkIndexer(client, settings, wal=wal)
+        indexer.add(doc)
+
+        wal.checkpoint.assert_called_once()
+        checkpointed_ids = wal.checkpoint.call_args[0][0]
+        assert expected_id in checkpointed_ids
+
+    def test_failed_bulk_items_sent_to_dlq(self, mock_opensearch_client: MagicMock) -> None:
+        """Retryable bulk errors route the failed item to the DLQ index."""
+        import hashlib
+
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.dlq import DLQ_INDEX
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        wal = MagicMock()
+
+        doc = make_document("/data/test.txt")
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+
+        # Retryable error (e.g., 429 rejected_execution_exception)
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5,
+            "errors": True,
+            "items": [
+                {
+                    "index": {
+                        "_index": "fscrawler_docs_test",
+                        "_id": expected_id,
+                        "status": 429,
+                        "error": {
+                            "type": "rejected_execution_exception",
+                            "reason": "rejected execution of bulk",
+                        },
+                    }
+                }
+            ],
+        }
+
+        indexer = BulkIndexer(client, settings, wal=wal)
+        indexer.add(doc)
+
+        # Verify index_raw was called with DLQ index
+        mock_opensearch_client.index.assert_called_once()
+        call_kwargs = mock_opensearch_client.index.call_args[1]
+        assert call_kwargs["index"] == DLQ_INDEX
+        assert "test:" in call_kwargs["id"]  # make_dlq_doc_id uses "job_name:doc_id"
+
+    def test_non_retryable_error_goes_to_pfq(self, mock_opensearch_client: MagicMock) -> None:
+        """Non-retryable errors (e.g., mapper_parsing_exception) go to PFQ index."""
+        import hashlib
+
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.dlq import PFQ_INDEX
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        wal = MagicMock()
+
+        doc = make_document("/data/test.txt")
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+
+        # Non-retryable error
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5,
+            "errors": True,
+            "items": [
+                {
+                    "index": {
+                        "_index": "fscrawler_docs_test",
+                        "_id": expected_id,
+                        "status": 400,
+                        "error": {
+                            "type": "mapper_parsing_exception",
+                            "reason": "failed to parse field [content]",
+                        },
+                    }
+                }
+            ],
+        }
+
+        indexer = BulkIndexer(client, settings, wal=wal)
+        indexer.add(doc)
+
+        # Verify index_raw was called with PFQ index
+        mock_opensearch_client.index.assert_called_once()
+        call_kwargs = mock_opensearch_client.index.call_args[1]
+        assert call_kwargs["index"] == PFQ_INDEX
+
+    def test_works_without_wal(self, mock_opensearch_client: MagicMock) -> None:
+        """BulkIndexer works correctly when no WAL is provided (backward compat)."""
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+
+        # No WAL parameter — should work as before
+        indexer = BulkIndexer(client, settings)
+        indexer.add(make_document("/data/test.txt"))
+
+        mock_opensearch_client.bulk.assert_called_once()
+
+    def test_delete_writes_to_wal(self, mock_opensearch_client: MagicMock) -> None:
+        """When WAL is provided, delete() appends a record to the WAL."""
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 100})
+        client = FsCrawlerClient(settings)
+        wal = MagicMock()
+
+        indexer = BulkIndexer(client, settings, wal=wal)
+        indexer.delete("/gone.txt")
+
+        wal.append.assert_called_once()
+        record = wal.append.call_args[0][0]
+        assert record["action"] == "delete"
+        assert record["job_name"] == "test"
+        assert "doc_id" in record
+
+    def test_pending_cleared_after_flush(self, mock_opensearch_client: MagicMock) -> None:
+        """The _pending dict is cleared after flush regardless of outcome."""
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+
+        indexer = BulkIndexer(client, settings)
+        indexer.add(make_document("/data/test.txt"))
+
+        assert len(indexer._pending) == 0  # cleared after auto-flush
+
+
+# ---------------------------------------------------------------------------
+# OTel metrics instrumentation
+# ---------------------------------------------------------------------------
+
+
+class TestIndexerMetrics:
+    def test_successful_flush_increments_documents_processed_success(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        import hashlib
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5, "errors": False,
+            "items": [{"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 201}}],
+        }
+
+        with patch("fscrawler.indexer.documents_processed") as mock_counter:
+            indexer = BulkIndexer(client, settings)
+            indexer.add(make_document("/data/test.txt"))
+            success_calls = [c for c in mock_counter.add.call_args_list if c[0][1].get("status") == "success"]
+            assert len(success_calls) >= 1
+
+    def test_failed_flush_increments_documents_processed_error(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        import hashlib
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5, "errors": True,
+            "items": [{"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 429,
+                "error": {"type": "circuit_breaking_exception", "reason": "oom"}}}],
+        }
+
+        with patch("fscrawler.indexer.documents_processed") as mock_counter:
+            indexer = BulkIndexer(client, settings)
+            indexer.add(make_document("/data/test.txt"))
+            error_calls = [c for c in mock_counter.add.call_args_list if c[0][1].get("status") == "error"]
+            assert len(error_calls) >= 1
+            assert error_calls[0][0][1]["error.type"] == "circuit_breaking_exception"
+
+    def test_bulk_duration_recorded_on_flush(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+
+        with patch("fscrawler.indexer.bulk_duration") as mock_histogram:
+            indexer = BulkIndexer(client, settings)
+            indexer.add(make_document("/data/test.txt"))
+            mock_histogram.record.assert_called_once()
+            elapsed = mock_histogram.record.call_args[0][0]
+            assert isinstance(elapsed, float) and elapsed >= 0
+            assert mock_histogram.record.call_args[0][1]["status"] == "success"
+
+    def test_bulk_exception_records_duration_with_error(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        mock_opensearch_client.bulk.side_effect = ConnectionError("cluster down")
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+
+        with patch("fscrawler.indexer.bulk_duration") as mock_histogram:
+            indexer = BulkIndexer(client, settings)
+            indexer.add(make_document("/data/test.txt"))
+            mock_histogram.record.assert_called_once()
+            attrs = mock_histogram.record.call_args[0][1]
+            assert attrs["status"] == "error"
+            assert attrs["error.type"] == "bulk_flush_error"
+
+    def test_dlq_write_increments_dlq_records(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        import hashlib
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5, "errors": True,
+            "items": [{"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 429,
+                "error": {"type": "circuit_breaking_exception", "reason": "oom"}}}],
+        }
+
+        with patch("fscrawler.indexer.dlq_records") as mock_dlq:
+            indexer = BulkIndexer(client, settings)
+            indexer.add(make_document("/data/test.txt"))
+            mock_dlq.add.assert_called_once()
+
+    def test_pfq_write_increments_pfq_records(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        import hashlib
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5, "errors": True,
+            "items": [{"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 400,
+                "error": {"type": "mapper_parsing_exception", "reason": "bad field"}}}],
+        }
+
+        with patch("fscrawler.indexer.pfq_records") as mock_pfq:
+            indexer = BulkIndexer(client, settings)
+            indexer.add(make_document("/data/test.txt"))
+            mock_pfq.add.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _pending thread safety
+# ---------------------------------------------------------------------------
+
+
+class TestPendingThreadSafety:
+    """Verify _pending dict is written under the lock to prevent data races."""
+
+    def test_add_populates_pending_under_lock(self, mock_opensearch_client: MagicMock) -> None:
+        """_pending[doc_id] must be set inside the lock, not outside it."""
+        import threading
+
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 100})
+        client = FsCrawlerClient(settings)
+        indexer = BulkIndexer(client, settings)
+
+        # Track whether _pending is written while lock is held
+        pending_written_under_lock = []
+        original_lock = indexer._lock
+
+        class TrackingLock:
+            """Wraps the real lock and records whether _pending was mutated inside it."""
+
+            def __init__(self) -> None:
+                self._held = False
+
+            def __enter__(self) -> "TrackingLock":
+                original_lock.acquire()
+                self._held = True
+                return self
+
+            def __exit__(self, *args: Any) -> None:
+                self._held = False
+                original_lock.release()
+
+            @property
+            def held(self) -> bool:
+                return self._held
+
+        tracking = TrackingLock()
+        indexer._lock = tracking  # type: ignore[assignment]
+
+        # Monkey-patch _pending __setitem__ to check if lock is held
+        original_pending = indexer._pending
+
+        class TrackingDict(dict):  # type: ignore[type-arg]
+            def __setitem__(self, key: Any, value: Any) -> None:
+                pending_written_under_lock.append(tracking.held)
+                super().__setitem__(key, value)
+
+        indexer._pending = TrackingDict(original_pending)  # type: ignore[assignment]
+
+        indexer.add(make_document("/data/test.txt"))
+
+        assert len(pending_written_under_lock) == 1
+        assert pending_written_under_lock[0] is True, \
+            "_pending must be written while the lock is held"
+
+    def test_delete_populates_pending_under_lock(self, mock_opensearch_client: MagicMock) -> None:
+        """_pending[doc_id] in delete() must be set inside the lock."""
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 100})
+        client = FsCrawlerClient(settings)
+        indexer = BulkIndexer(client, settings)
+
+        pending_written_under_lock = []
+        original_lock = indexer._lock
+
+        class TrackingLock:
+            def __init__(self) -> None:
+                self._held = False
+
+            def __enter__(self) -> "TrackingLock":
+                original_lock.acquire()
+                self._held = True
+                return self
+
+            def __exit__(self, *args: Any) -> None:
+                self._held = False
+                original_lock.release()
+
+            @property
+            def held(self) -> bool:
+                return self._held
+
+        tracking = TrackingLock()
+        indexer._lock = tracking  # type: ignore[assignment]
+
+        original_pending = indexer._pending
+
+        class TrackingDict(dict):  # type: ignore[type-arg]
+            def __setitem__(self, key: Any, value: Any) -> None:
+                pending_written_under_lock.append(tracking.held)
+                super().__setitem__(key, value)
+
+        indexer._pending = TrackingDict(original_pending)  # type: ignore[assignment]
+
+        indexer.delete("/gone.txt")
+
+        assert len(pending_written_under_lock) == 1
+        assert pending_written_under_lock[0] is True, \
+            "_pending must be written while the lock is held"

@@ -26,8 +26,8 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from fscrawler import __version__
-from fscrawler.models import make_doc_id
 from fscrawler.client import FsCrawlerClient
+from fscrawler.models import make_doc_id
 from fscrawler.multipart import parse_multipart
 from fscrawler.parser import TikaParser
 from fscrawler.settings import FsSettings
@@ -96,6 +96,13 @@ def create_app(
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+    # Mount Prometheus /metrics endpoint
+    from fscrawler.metrics import get_prometheus_app
+
+    prometheus_app = get_prometheus_app()
+    if prometheus_app is not None:
+        app.mount("/metrics", prometheus_app)
 
     if parser is None:
         parser = TikaParser(settings)
