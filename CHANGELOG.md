@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.5.1] - 2026-04-04
 
+Audit of all upstream issue references in the codebase. Each fix was verified
+against the original GitHub issue (including all comments) to confirm we are
+testing and fixing the right problem.
+
+### Audit findings
+
+| Issue | Finding | Resolution |
+|-------|---------|------------|
+| [#955](https://github.com/dadoonet/fscrawler/issues/955) | `test_owner_stored_as_name` had `or True` — assertion never failed | Replaced with mock-based test; added `KeyError` fallback test |
+| [#566](https://github.com/dadoonet/fscrawler/issues/566) | Streaming test didn't verify a file handle was sent to Tika | Added `isinstance` / `hasattr(read)` assertions on both paths |
+| [#1605](https://github.com/dadoonet/fscrawler/issues/1605) | `parse_metadata_only()` omitted checksum and content_type | Now computes streaming checksum and infers content_type via `mimetypes` |
+| [#1300](https://github.com/dadoonet/fscrawler/issues/1300) | `_delete()` used `str()` instead of `.as_posix()` | Fixed; added cross-directory move test |
+| [#904](https://github.com/dadoonet/fscrawler/issues/904) | `file.filename` store=true was untested | Added explicit mapping assertion |
+| [#802](https://github.com/dadoonet/fscrawler/issues/802) | No test for `parse_metadata_only` + `content_normalize=True` | Added test confirming `content=None` is not altered |
+| [#1709](https://github.com/dadoonet/fscrawler/issues/1709) | Misattributed — upstream is a Java Jackson bug, not applicable to Python | Comment corrected to "Inspired by"; middleware is a general safeguard |
+| [#1093](https://github.com/dadoonet/fscrawler/issues/1093) | Misattributed — upstream is crawl thread hang, we monitor Observer thread | Comment corrected; different failure mode documented |
+| [#904](https://github.com/dadoonet/fscrawler/issues/904) | Template test attributed to #904 but tests #890 field types | Attribution corrected to #890 primary, #904 related |
+
 ### Fixed
 - **#955 owner name test was a no-op:** Replaced `or True` assertion with mock-based test that verifies `pwd.getpwuid` name resolution. Added `KeyError` fallback test.
 - **#566 streaming test didn't verify streaming:** Added assertions that large files pass a file handle (not bytes) to Tika, and small files pass bytes.
@@ -18,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - **Corrected upstream issue attributions:** `#1709` comment now notes this is a Python-side safeguard (not a Jackson fix). `#1093` comment now notes this monitors the Observer thread (not the crawl thread). `#904` attribution corrected to `#890` for field type tests.
+
+### Known limitations
+- **#1093 — Observer vs crawl thread:** Our health-check monitors the watchdog Observer thread, not the crawl/indexing thread. A hung Tika call would not be detected. Liveness monitoring for the document processing pipeline is tracked in `ROADMAP.md`.
+- **#1709 — Python-side safeguard only:** The upstream Jackson string-length bug cannot occur in this Python project. Our `max_body_size` middleware is a general defensive measure, not a fix for the upstream issue.
+- **#904 — Attribute schema divergence:** Our `mapping_attributes.json` uses a flat `attributes.{owner,group,permissions}` structure. Upstream fscrawler uses nested `attributes.acl.{permissions,principal,type,flags}`. If sharing indexes with the Java upstream, this would cause mapping conflicts.
 
 ## [0.5.0] - 2026-04-04
 
