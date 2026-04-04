@@ -212,6 +212,10 @@ class TestRunRetryCycle:
             # positional: index, doc_id, body
             body = call_kwargs[0][2] if len(call_kwargs[0]) > 2 else call_kwargs[1]["body"]
         assert body["retry_count"] == 2
+        # next_retry must be set and represent a valid ISO timestamp
+        assert "next_retry" in body
+        assert isinstance(body["next_retry"], str)
+        assert len(body["next_retry"]) > 0
 
     def test_max_retries_promotes_to_pfq(self) -> None:
         from fscrawler.dlq import DLQ_INDEX, PFQ_INDEX, run_retry_cycle

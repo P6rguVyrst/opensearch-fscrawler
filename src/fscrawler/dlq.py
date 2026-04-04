@@ -159,7 +159,7 @@ def _retry_single_record(
         else:
             now = datetime.now(tz=UTC)
             delay = calculate_next_retry_delay(
-                retry_count=new_count,
+                retry_count=new_count - 1,
                 base=config.retry_interval,
                 multiplier=config.backoff_multiplier,
                 cap=config.max_backoff,
