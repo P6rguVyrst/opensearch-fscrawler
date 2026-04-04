@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call, patch
 
 from tests.conftest import make_document, make_settings
 
@@ -463,3 +463,194 @@ class TestBulkErrorHandling:
 
         # Buffer should be cleared after failed flush
         assert len(indexer._buffer) == 0
+
+
+# ---------------------------------------------------------------------------
+# WAL + DLQ integration
+# ---------------------------------------------------------------------------
+
+
+class TestBulkIndexerWalIntegration:
+    """Tests for WAL durability and DLQ/PFQ error routing in BulkIndexer."""
+
+    def test_add_writes_to_wal(self, mock_opensearch_client: MagicMock) -> None:
+        """When WAL is provided, add() appends a record to the WAL."""
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 100})
+        client = FsCrawlerClient(settings)
+        wal = MagicMock()
+
+        indexer = BulkIndexer(client, settings, wal=wal)
+        doc = make_document("/data/test.txt")
+        indexer.add(doc)
+
+        wal.append.assert_called_once()
+        record = wal.append.call_args[0][0]
+        assert record["job_name"] == "test"
+        assert record["action"] == "index"
+        assert record["target_index"] == settings.elasticsearch.index
+        assert "doc_id" in record
+        assert "payload" in record
+        assert "ts" in record
+
+    def test_successful_flush_checkpoints_wal(self, mock_opensearch_client: MagicMock) -> None:
+        """After a successful bulk flush, WAL is checkpointed with succeeded doc IDs."""
+        import hashlib
+
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        wal = MagicMock()
+
+        doc = make_document("/data/test.txt")
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+
+        # Mock bulk response with matching item
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5,
+            "errors": False,
+            "items": [
+                {"index": {"_index": "fscrawler_docs_test", "_id": expected_id, "status": 201, "result": "created"}}
+            ],
+        }
+
+        indexer = BulkIndexer(client, settings, wal=wal)
+        indexer.add(doc)
+
+        wal.checkpoint.assert_called_once()
+        checkpointed_ids = wal.checkpoint.call_args[0][0]
+        assert expected_id in checkpointed_ids
+
+    def test_failed_bulk_items_sent_to_dlq(self, mock_opensearch_client: MagicMock) -> None:
+        """Retryable bulk errors route the failed item to the DLQ index."""
+        import hashlib
+
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.dlq import DLQ_INDEX
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        wal = MagicMock()
+
+        doc = make_document("/data/test.txt")
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+
+        # Retryable error (e.g., 429 rejected_execution_exception)
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5,
+            "errors": True,
+            "items": [
+                {
+                    "index": {
+                        "_index": "fscrawler_docs_test",
+                        "_id": expected_id,
+                        "status": 429,
+                        "error": {
+                            "type": "rejected_execution_exception",
+                            "reason": "rejected execution of bulk",
+                        },
+                    }
+                }
+            ],
+        }
+
+        indexer = BulkIndexer(client, settings, wal=wal)
+        indexer.add(doc)
+
+        # Verify index_raw was called with DLQ index
+        mock_opensearch_client.index.assert_called_once()
+        call_kwargs = mock_opensearch_client.index.call_args[1]
+        assert call_kwargs["index"] == DLQ_INDEX
+        assert "test:" in call_kwargs["id"]  # make_dlq_doc_id uses "job_name:doc_id"
+
+    def test_non_retryable_error_goes_to_pfq(self, mock_opensearch_client: MagicMock) -> None:
+        """Non-retryable errors (e.g., mapper_parsing_exception) go to PFQ index."""
+        import hashlib
+
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.dlq import PFQ_INDEX
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+        wal = MagicMock()
+
+        doc = make_document("/data/test.txt")
+        expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
+
+        # Non-retryable error
+        mock_opensearch_client.bulk.return_value = {
+            "took": 5,
+            "errors": True,
+            "items": [
+                {
+                    "index": {
+                        "_index": "fscrawler_docs_test",
+                        "_id": expected_id,
+                        "status": 400,
+                        "error": {
+                            "type": "mapper_parsing_exception",
+                            "reason": "failed to parse field [content]",
+                        },
+                    }
+                }
+            ],
+        }
+
+        indexer = BulkIndexer(client, settings, wal=wal)
+        indexer.add(doc)
+
+        # Verify index_raw was called with PFQ index
+        mock_opensearch_client.index.assert_called_once()
+        call_kwargs = mock_opensearch_client.index.call_args[1]
+        assert call_kwargs["index"] == PFQ_INDEX
+
+    def test_works_without_wal(self, mock_opensearch_client: MagicMock) -> None:
+        """BulkIndexer works correctly when no WAL is provided (backward compat)."""
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+
+        # No WAL parameter — should work as before
+        indexer = BulkIndexer(client, settings)
+        indexer.add(make_document("/data/test.txt"))
+
+        mock_opensearch_client.bulk.assert_called_once()
+
+    def test_delete_writes_to_wal(self, mock_opensearch_client: MagicMock) -> None:
+        """When WAL is provided, delete() appends a record to the WAL."""
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 100})
+        client = FsCrawlerClient(settings)
+        wal = MagicMock()
+
+        indexer = BulkIndexer(client, settings, wal=wal)
+        indexer.delete("/gone.txt")
+
+        wal.append.assert_called_once()
+        record = wal.append.call_args[0][0]
+        assert record["action"] == "delete"
+        assert record["job_name"] == "test"
+        assert "doc_id" in record
+
+    def test_pending_cleared_after_flush(self, mock_opensearch_client: MagicMock) -> None:
+        """The _pending dict is cleared after flush regardless of outcome."""
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 1})
+        client = FsCrawlerClient(settings)
+
+        indexer = BulkIndexer(client, settings)
+        indexer.add(make_document("/data/test.txt"))
+
+        assert len(indexer._pending) == 0  # cleared after auto-flush
