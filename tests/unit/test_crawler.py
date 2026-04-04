@@ -287,6 +287,45 @@ class TestCrawlerSymlinks:
         found = [f.name for f in crawler.scan()]
         assert "link.txt" in found
 
+    @pytest.mark.timeout(10)
+    def test_symlink_cycle_does_not_hang(self, tmp_path: Path) -> None:
+        """A symlink that points back to an ancestor must not cause infinite recursion."""
+        data = tmp_path / "data"
+        real = data / "real"
+        real.mkdir(parents=True)
+        (real / "file.txt").write_bytes(b"hello")
+        # real/loop -> data  (creates a cycle)
+        (real / "loop").symlink_to(data)
+
+        settings = make_settings(tmp_path, follow_symlinks=True)
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = [f.name for f in crawler.scan()]
+        assert "file.txt" in found
+
+    @pytest.mark.timeout(10)
+    def test_symlink_mutual_cycle(self, tmp_path: Path) -> None:
+        """Two directories with symlinks pointing at each other must not hang."""
+        data = tmp_path / "data"
+        a = data / "a"
+        b = data / "b"
+        a.mkdir(parents=True)
+        b.mkdir(parents=True)
+        (a / "file_a.txt").write_bytes(b"a")
+        (b / "file_b.txt").write_bytes(b"b")
+        # a/link_to_b -> b, b/link_to_a -> a
+        (a / "link_to_b").symlink_to(b)
+        (b / "link_to_a").symlink_to(a)
+
+        settings = make_settings(tmp_path, follow_symlinks=True)
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = sorted(f.name for f in crawler.scan())
+        assert "file_a.txt" in found
+        assert "file_b.txt" in found
+
     def test_follow_symlinks_false(self, tmp_path: Path) -> None:
         data = tmp_path / "data"
         data.mkdir()
@@ -481,3 +520,80 @@ class TestDefaultExcludes:
         assert "report.pdf" in found
         assert "~$report.pdf" in found
         assert "notes.txt" not in found
+
+
+# ---------------------------------------------------------------------------
+# .fscrawlerignore sentinel (Task 3)
+# ---------------------------------------------------------------------------
+
+
+class TestFscrawlerIgnore:
+    def test_directory_with_ignore_file_skipped(self, tmp_path: Path) -> None:
+        """Dir with .fscrawlerignore skips all files in it."""
+        data = tmp_path / "data"
+        ignored = data / "ignored"
+        data.mkdir()
+        ignored.mkdir()
+        (data / "keep.txt").write_bytes(b"keep")
+        (ignored / "secret.txt").write_bytes(b"secret")
+        (ignored / ".fscrawlerignore").write_bytes(b"")
+
+        settings = make_settings(tmp_path)
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = [f.name for f in crawler.scan()]
+        assert "keep.txt" in found
+        assert "secret.txt" not in found
+
+    def test_nested_ignore_only_affects_subtree(self, tmp_path: Path) -> None:
+        """Parent dir files still found when child has .fscrawlerignore."""
+        data = tmp_path / "data"
+        parent = data / "parent"
+        child = parent / "child"
+        data.mkdir()
+        parent.mkdir()
+        child.mkdir()
+        (parent / "visible.txt").write_bytes(b"visible")
+        (child / "hidden.txt").write_bytes(b"hidden")
+        (child / ".fscrawlerignore").write_bytes(b"")
+
+        settings = make_settings(tmp_path)
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = [f.name for f in crawler.scan()]
+        assert "visible.txt" in found
+        assert "hidden.txt" not in found
+
+    def test_ignore_file_in_root_skips_everything(self, tmp_path: Path) -> None:
+        """.fscrawlerignore in root = empty scan."""
+        data = tmp_path / "data"
+        data.mkdir()
+        (data / "file.txt").write_bytes(b"hello")
+        (data / ".fscrawlerignore").write_bytes(b"")
+
+        settings = make_settings(tmp_path)
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = list(crawler.scan())
+        assert found == []
+
+    def test_scan_folders_respects_ignore_sentinel(self, tmp_path: Path) -> None:
+        """Dirs with .fscrawlerignore should not be yielded by scan_folders()."""
+        data = tmp_path / "data"
+        visible = data / "visible"
+        ignored = data / "ignored"
+        data.mkdir()
+        visible.mkdir()
+        ignored.mkdir()
+        (ignored / ".fscrawlerignore").write_bytes(b"")
+
+        settings = make_settings(tmp_path)
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = [str(p) for p in crawler.scan_folders()]
+        assert str(visible) in found
+        assert str(ignored) not in found

@@ -15,6 +15,7 @@ from fscrawler.settings import FsSettings
 logger = logging.getLogger("fscrawler.crawler")
 
 _CHECKPOINT_FILENAME = ".fscrawler_checkpoint.json"
+_IGNORE_SENTINEL = ".fscrawlerignore"
 
 
 def _matches_pattern(name: str, virtual_path: str, pattern: str) -> bool:
@@ -132,6 +133,9 @@ class LocalCrawler:
 
     def _walk_dirs(self, root: Path) -> Iterator[Path]:
         """Recursively yield subdirectories, respecting follow_symlinks and continue_on_error."""
+        if (root / _IGNORE_SENTINEL).exists():
+            logger.debug("Skipping %s — .fscrawlerignore found", root)
+            return
         fs = self._settings.fs
         try:
             entries = list(os.scandir(root))
@@ -144,11 +148,18 @@ class LocalCrawler:
             if entry.is_symlink() and not fs.follow_symlinks:
                 continue
             if entry.is_dir(follow_symlinks=fs.follow_symlinks):
-                yield Path(entry.path)
-                yield from self._walk_dirs(Path(entry.path))
+                child = Path(entry.path)
+                if (child / _IGNORE_SENTINEL).exists():
+                    logger.debug("Skipping %s — .fscrawlerignore found", child)
+                    continue
+                yield child
+                yield from self._walk_dirs(child)
 
     def _walk(self, root: Path) -> Iterator[str]:  # noqa: C901
         """Recursively walk root, applying includes/excludes filters."""
+        if (root / _IGNORE_SENTINEL).exists():
+            logger.debug("Skipping %s — .fscrawlerignore found", root)
+            return
         fs = self._settings.fs
 
         try:
