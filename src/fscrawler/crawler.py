@@ -81,7 +81,12 @@ class LocalCrawler:
             yield path
 
     def is_new_or_modified(self, path: Path) -> bool:
-        """Return True if the file is new or has been modified since the last checkpoint."""
+        """Return True if the file is new or has been modified since the last checkpoint.
+
+        A tolerance of ``_CLOCK_SKEW_SECONDS`` is applied so that files whose
+        mtime drifted slightly backward (e.g. NFS/CIFS clock skew) are still
+        picked up.
+        """
         key = str(path)
         if key not in self._previous_checkpoint:
             return True
@@ -89,7 +94,13 @@ class LocalCrawler:
             current_mtime = path.stat().st_mtime
         except OSError:
             return False
-        return current_mtime != self._previous_checkpoint[key]
+        previous_mtime = self._previous_checkpoint[key]
+        if current_mtime == previous_mtime:
+            return False  # unchanged
+        if current_mtime > previous_mtime:
+            return True  # clearly modified
+        # current_mtime < previous_mtime — clock may have drifted backward
+        return (previous_mtime - current_mtime) <= _CLOCK_SKEW_SECONDS
 
     def get_deleted_files(self) -> list[str]:
         """Return virtual paths of files deleted since the last checkpoint.
