@@ -29,6 +29,8 @@ from fscrawler.watcher import FsEventHandler
 
 logger = logging.getLogger("fscrawler.cli")
 
+_MAX_OBSERVER_RESTARTS = 5
+
 
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
 @click.argument("job_name", default="fscrawler")
@@ -314,9 +316,27 @@ def _crawler_loop(
     observer.start()
     logger.info("Watchdog observer started on %s", settings.fs.url)
 
+    restarts = 0
     try:
-        while observer.is_alive():
-            time.sleep(1)
+        while True:
+            if observer.is_alive():
+                time.sleep(1)
+                continue
+            # Observer died
+            if restarts >= _MAX_OBSERVER_RESTARTS:
+                logger.error(
+                    "Watchdog observer died %d times, giving up", restarts
+                )
+                break
+            restarts += 1
+            logger.warning(
+                "Watchdog observer died, restarting (attempt %d/%d)",
+                restarts,
+                _MAX_OBSERVER_RESTARTS,
+            )
+            observer = Observer()
+            observer.schedule(handler, str(settings.fs.url), recursive=True)
+            observer.start()
     finally:
         observer.stop()
         observer.join()
@@ -411,9 +431,26 @@ def _run(job_name: str, settings_file: Path, job_dir: Path, loop: bool) -> None:
         observer.schedule(handler, str(settings.fs.url), recursive=True)
         observer.start()
         logger.info("Watchdog observer started on %s", settings.fs.url)
+        restarts = 0
         try:
-            while observer.is_alive():
-                time.sleep(1)
+            while True:
+                if observer.is_alive():
+                    time.sleep(1)
+                    continue
+                if restarts >= _MAX_OBSERVER_RESTARTS:
+                    logger.error(
+                        "Watchdog observer died %d times, giving up", restarts
+                    )
+                    break
+                restarts += 1
+                logger.warning(
+                    "Watchdog observer died, restarting (attempt %d/%d)",
+                    restarts,
+                    _MAX_OBSERVER_RESTARTS,
+                )
+                observer = Observer()
+                observer.schedule(handler, str(settings.fs.url), recursive=True)
+                observer.start()
         finally:
             stop_event.set()
             observer.stop()
