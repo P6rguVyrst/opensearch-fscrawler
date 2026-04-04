@@ -333,6 +333,19 @@ class TestParseMetadataOnly:
         expected = hashlib.sha256(content).hexdigest()
         assert doc.file.checksum == expected
 
+    def test_metadata_only_detects_content_type(self, tmp_path: Path) -> None:
+        """Content type should be inferred from extension for metadata-only docs."""
+        from fscrawler.parser import TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        f = data / "large.pdf"
+        f.write_bytes(b"x" * 1000)
+        settings = make_settings(url=str(data))
+        parser = TikaParser(settings)
+        doc = parser.parse_metadata_only(f)
+        assert doc.file.content_type == "application/pdf"
+
 
 # ---------------------------------------------------------------------------
 # Large file streaming (Task 11)

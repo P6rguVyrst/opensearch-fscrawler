@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import logging
+import mimetypes
 import os
 import re
 import stat as stat_module
@@ -274,7 +275,7 @@ class TikaParser:
         file_info = FileInfo(
             filename=file_path.name,
             extension=file_path.suffix.lstrip(".").lower(),
-            content_type="",
+            content_type=mimetypes.guess_type(file_path.name)[0] or "application/octet-stream",
             filesize=stat.st_size,
             indexing_date=now,
             last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
