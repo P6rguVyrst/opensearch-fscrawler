@@ -198,7 +198,7 @@ class FsEventHandler(FileSystemEventHandler):
         try:
             root = self._settings.fs.url
             try:
-                virtual = "/" + str(Path(path).relative_to(root))
+                virtual = "/" + Path(path).relative_to(root).as_posix()
             except ValueError:
                 virtual = "/" + Path(path).name
             doc_id = make_doc_id(virtual)

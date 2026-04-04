@@ -65,8 +65,8 @@ class TestTemplateValidity:
         assert isinstance(data, dict)
 
 
-# Upstream: https://github.com/dadoonet/fscrawler/issues/904
 # Upstream: https://github.com/dadoonet/fscrawler/issues/890
+# Related: https://github.com/dadoonet/fscrawler/issues/904 (store=true on filename)
 class TestMappingTypes:
     """Validate field types prevent mapping conflicts."""
 
@@ -92,3 +92,8 @@ class TestMappingTypes:
         data = json.loads((_TEMPLATES_DIR / "mapping_attributes.json").read_text())
         attrs_props = data["template"]["mappings"]["properties"]["attributes"]["properties"]
         assert attrs_props["permissions"]["type"] == "keyword"
+
+    def test_filename_is_stored(self) -> None:
+        data = json.loads((_TEMPLATES_DIR / "mapping_file.json").read_text())
+        file_props = data["template"]["mappings"]["properties"]["file"]["properties"]
+        assert file_props["filename"].get("store") is True

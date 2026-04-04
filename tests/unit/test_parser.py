@@ -317,6 +317,35 @@ class TestParseMetadataOnly:
         doc = parser.parse_metadata_only(f)
         assert doc.file.attributes is None
 
+    def test_metadata_only_computes_checksum(self, tmp_path: Path) -> None:
+        """Checksum should be computed even for metadata-only documents."""
+        import hashlib
+        from fscrawler.parser import TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        content = b"x" * 1000
+        f = data / "large.pdf"
+        f.write_bytes(content)
+        settings = make_settings(url=str(data))
+        parser = TikaParser(settings)
+        doc = parser.parse_metadata_only(f)
+        expected = hashlib.sha256(content).hexdigest()
+        assert doc.file.checksum == expected
+
+    def test_metadata_only_detects_content_type(self, tmp_path: Path) -> None:
+        """Content type should be inferred from extension for metadata-only docs."""
+        from fscrawler.parser import TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        f = data / "large.pdf"
+        f.write_bytes(b"x" * 1000)
+        settings = make_settings(url=str(data))
+        parser = TikaParser(settings)
+        doc = parser.parse_metadata_only(f)
+        assert doc.file.content_type == "application/pdf"
+
 
 # ---------------------------------------------------------------------------
 # Large file streaming (Task 11)
@@ -354,6 +383,14 @@ class TestLargeFileStreaming:
             assert doc.file.checksum is not None
             assert doc.file.filesize == _STREAMING_THRESHOLD + 1
 
+            # Verify streaming path sends file handle, not bytes
+            call_kwargs = mock_client.put.call_args
+            content_arg = call_kwargs.kwargs.get("content") or call_kwargs[1].get("content")
+            assert not isinstance(content_arg, bytes), \
+                "Expected file handle for streaming, got bytes"
+            assert hasattr(content_arg, "read"), \
+                "Expected file-like object with read() method"
+
     def test_small_file_uses_memory_path(self, tmp_path: Path) -> None:
         from fscrawler.parser import TikaParser
 
@@ -377,6 +414,12 @@ class TestLargeFileStreaming:
             parser = TikaParser(settings)
             doc = parser.parse(small_file)
             assert doc.file.checksum is not None
+
+            # Verify memory path sends bytes directly
+            call_kwargs = mock_client.put.call_args
+            content_arg = call_kwargs.kwargs.get("content") or call_kwargs[1].get("content")
+            assert isinstance(content_arg, bytes), \
+                "Expected bytes for in-memory path, got file handle"
 
     def test_large_file_checksum_matches_small_file_checksum(self, tmp_path: Path) -> None:
         """Streaming and in-memory checksum computation must produce identical results."""
@@ -433,18 +476,28 @@ class TestPermissionsFormat:
         assert doc.file.attributes["permissions"] == "644"
 
     def test_owner_stored_as_name(self, mock_tika: Any, tmp_path: Path) -> None:
+        from unittest.mock import patch, MagicMock
         from fscrawler.parser import TikaParser
 
         f = tmp_path / "file.txt"
         f.write_bytes(b"text")
         settings = make_settings(url=str(tmp_path), attributes_support=True)
         parser = TikaParser(settings)
-        doc = parser.parse(f)
+
+        mock_pw = MagicMock()
+        mock_pw.pw_name = "testuser"
+        mock_gr = MagicMock()
+        mock_gr.gr_name = "testgroup"
+
+        with (
+            patch("pwd.getpwuid", return_value=mock_pw),
+            patch("grp.getgrgid", return_value=mock_gr),
+        ):
+            doc = parser.parse(f)
+
         assert doc.file.attributes is not None
-        # Owner should be a string name, not numeric UID
-        assert not doc.file.attributes["owner"].isdigit() or True  # CI might have numeric-only users
-        assert "owner" in doc.file.attributes
-        assert "group" in doc.file.attributes
+        assert doc.file.attributes["owner"] == "testuser"
+        assert doc.file.attributes["group"] == "testgroup"
 
     def test_falls_back_to_numeric_ids_when_pwd_grp_unavailable(
         self, mock_tika: Any, tmp_path: Path
@@ -474,6 +527,30 @@ class TestPermissionsFormat:
         assert doc.file.attributes is not None
         assert doc.file.attributes["permissions"] == "644"
         # Owner and group should be numeric strings
+        assert doc.file.attributes["owner"].isdigit()
+        assert doc.file.attributes["group"].isdigit()
+
+    def test_falls_back_to_numeric_when_user_not_found(
+        self, mock_tika: Any, tmp_path: Path
+    ) -> None:
+        """KeyError from getpwuid/getgrgid falls back to numeric UID/GID."""
+        from unittest.mock import patch
+        from fscrawler.parser import TikaParser
+
+        f = tmp_path / "file.txt"
+        f.write_bytes(b"text")
+        f.chmod(0o644)
+        settings = make_settings(url=str(tmp_path), attributes_support=True)
+        parser = TikaParser(settings)
+
+        with (
+            patch("pwd.getpwuid", side_effect=KeyError("no such user")),
+            patch("grp.getgrgid", side_effect=KeyError("no such group")),
+        ):
+            doc = parser.parse(f)
+
+        assert doc.file.attributes is not None
+        assert doc.file.attributes["permissions"] == "644"
         assert doc.file.attributes["owner"].isdigit()
         assert doc.file.attributes["group"].isdigit()
 
@@ -540,3 +617,18 @@ class TestContentNormalization:
             parser = TikaParser(settings)
             doc = parser.parse(f)
             assert doc.content == tika_content
+
+    def test_normalization_in_parse_metadata_only_does_not_alter_none_content(
+        self, tmp_path: Path
+    ) -> None:
+        """parse_metadata_only returns content=None; normalization must not error."""
+        from fscrawler.parser import TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        f = data / "file.txt"
+        f.write_bytes(b"text")
+        settings = make_settings(url=str(data), content_normalize=True)
+        parser = TikaParser(settings)
+        doc = parser.parse_metadata_only(f)
+        assert doc.content is None

@@ -507,3 +507,27 @@ class TestOnMoved:
         client.delete.assert_not_called()
         # Should still index new path
         client.index.assert_called_once()
+
+    def test_moved_across_directories(self, tmp_path: Path) -> None:
+        """File moved from one subdirectory to another should delete old, index new."""
+        from unittest.mock import MagicMock
+
+        data = tmp_path / "data"
+        dir_a = data / "dir_a"
+        dir_b = data / "dir_b"
+        dir_a.mkdir(parents=True)
+        dir_b.mkdir(parents=True)
+        (dir_b / "report.txt").write_bytes(b"content")
+
+        settings = make_settings(fs={"url": str(data), "remove_deleted": True})
+        handler, client, parser = make_handler(settings=settings)
+
+        event = MagicMock()
+        event.is_directory = False
+        event.src_path = str(dir_a / "report.txt")
+        event.dest_path = str(dir_b / "report.txt")
+
+        handler.on_moved(event)
+
+        client.delete.assert_called_once()
+        client.index.assert_called_once()
