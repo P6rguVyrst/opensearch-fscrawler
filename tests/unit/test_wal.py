@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 
 class TestWalAppend:
@@ -170,3 +171,28 @@ class TestWalIsEmpty:
         wal = WriteAheadLog(tmp_path / ".wal")
         wal.append({"doc_id": "x", "action": "index"})
         assert wal.is_empty is False
+
+
+class TestWalMetrics:
+    def test_append_increments_wal_records(self, tmp_path: Path) -> None:
+        from fscrawler.wal import WriteAheadLog
+
+        wal = WriteAheadLog(tmp_path / ".wal")
+
+        with patch("fscrawler.wal.wal_records") as mock_counter:
+            wal.append({"doc_id": "abc", "action": "index"})
+            mock_counter.add.assert_called_once()
+            attrs = mock_counter.add.call_args[0][1]
+            assert attrs["fscrawler.wal.action"] == "append"
+
+    def test_checkpoint_increments_wal_records(self, tmp_path: Path) -> None:
+        from fscrawler.wal import WriteAheadLog
+
+        wal = WriteAheadLog(tmp_path / ".wal")
+        wal.append({"doc_id": "abc", "action": "index"})
+
+        with patch("fscrawler.wal.wal_records") as mock_counter:
+            wal.checkpoint({"abc"})
+            mock_counter.add.assert_called_once()
+            attrs = mock_counter.add.call_args[0][1]
+            assert attrs["fscrawler.wal.action"] == "checkpoint"

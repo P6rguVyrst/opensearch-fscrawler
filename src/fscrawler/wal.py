@@ -11,6 +11,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from fscrawler.metrics import wal_records
+
 logger = logging.getLogger("fscrawler.wal")
 
 
@@ -38,6 +40,7 @@ class WriteAheadLog:
                 f.write(line)
                 f.flush()
                 os.fsync(f.fileno())
+            wal_records.add(1, {"fscrawler.wal.action": "append"})
 
     def read(self) -> list[dict[str, Any]]:
         """Read all valid records from the WAL. Skips corrupt lines."""
@@ -91,6 +94,7 @@ class WriteAheadLog:
                     f.flush()
                     os.fsync(f.fileno())
                 os.replace(tmp_path, str(self._path))
+                wal_records.add(1, {"fscrawler.wal.action": "checkpoint"})
             except Exception:
                 try:
                     os.unlink(tmp_path)
