@@ -441,11 +441,9 @@ class TestWatcherFullPathFilters:
 # ---------------------------------------------------------------------------
 
 
+# Upstream: https://github.com/dadoonet/fscrawler/issues/1300
 class TestOnMoved:
-    """Handle file move events — reindex at new path.
-
-    Upstream: https://github.com/dadoonet/fscrawler/issues/1300
-    """
+    """Handle file move events — reindex at new path."""
 
     def test_moved_file_reindexed_at_new_path(self, tmp_path: Path) -> None:
         (tmp_path / "data").mkdir(parents=True, exist_ok=True)

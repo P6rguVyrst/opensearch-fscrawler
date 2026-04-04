@@ -785,11 +785,9 @@ class TestUnicodeNormalization:
 # ---------------------------------------------------------------------------
 
 
+# Upstream: https://github.com/dadoonet/fscrawler/issues/1605
 class TestIgnoreAboveMetadataOnly:
-    """Files exceeding ignore_above should still be yielded from scan().
-
-    Upstream: https://github.com/dadoonet/fscrawler/issues/1605
-    """
+    """Files exceeding ignore_above should still be yielded from scan()."""
 
     def test_large_file_still_yielded_from_scan(self, tmp_path: Path) -> None:
         data = tmp_path / "data"

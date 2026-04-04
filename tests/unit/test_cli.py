@@ -420,11 +420,9 @@ class TestOtelEndpointFlag:
 # ---------------------------------------------------------------------------
 
 
+# Upstream: https://github.com/dadoonet/fscrawler/issues/1093
 class TestObserverRestart:
-    """Detect dead watchdog observer and restart up to _MAX_OBSERVER_RESTARTS times.
-
-    Upstream: https://github.com/dadoonet/fscrawler/issues/1093
-    """
+    """Detect dead watchdog observer and restart up to _MAX_OBSERVER_RESTARTS times."""
 
     def test_observer_restarted_when_it_dies(self, tmp_path: Path) -> None:
         """Observer.start() should be called more than once when observer dies."""

@@ -273,11 +273,9 @@ class TestChecksumAlwaysComputed:
 # ---------------------------------------------------------------------------
 
 
+# Upstream: https://github.com/dadoonet/fscrawler/issues/1605
 class TestParseMetadataOnly:
-    """parse_metadata_only returns document with metadata but no content.
-
-    Upstream: https://github.com/dadoonet/fscrawler/issues/1605
-    """
+    """parse_metadata_only returns document with metadata but no content."""
 
     def test_returns_document_without_content(self, tmp_path: Path) -> None:
         from fscrawler.parser import TikaParser
@@ -300,12 +298,10 @@ class TestParseMetadataOnly:
 # ---------------------------------------------------------------------------
 
 
+# Upstream: https://github.com/dadoonet/fscrawler/issues/566
+# Upstream: https://github.com/dadoonet/fscrawler/issues/890
 class TestLargeFileStreaming:
-    """Stream large files to prevent OOM.
-
-    Upstream: https://github.com/dadoonet/fscrawler/issues/566
-    Upstream: https://github.com/dadoonet/fscrawler/issues/890
-    """
+    """Stream large files to prevent OOM."""
 
     def test_large_file_uses_streaming_path(self, tmp_path: Path) -> None:
         from fscrawler.parser import TikaParser, _STREAMING_THRESHOLD
@@ -394,12 +390,10 @@ class TestLargeFileStreaming:
 # ---------------------------------------------------------------------------
 
 
+# Upstream: https://github.com/dadoonet/fscrawler/issues/956
+# Upstream: https://github.com/dadoonet/fscrawler/issues/955
 class TestPermissionsFormat:
-    """Store permissions as octal string, owner/group as names.
-
-    Upstream: https://github.com/dadoonet/fscrawler/issues/956
-    Upstream: https://github.com/dadoonet/fscrawler/issues/955
-    """
+    """Store permissions as octal string, owner/group as names."""
 
     def test_permissions_stored_as_octal_string(self, mock_tika: Any, tmp_path: Path) -> None:
         from fscrawler.parser import TikaParser
@@ -443,11 +437,9 @@ class TestPermissionsFormat:
 # ---------------------------------------------------------------------------
 
 
+# Upstream: https://github.com/dadoonet/fscrawler/issues/802
 class TestContentNormalization:
-    """Normalize excessive whitespace in Tika-extracted content.
-
-    Upstream: https://github.com/dadoonet/fscrawler/issues/802
-    """
+    """Normalize excessive whitespace in Tika-extracted content."""
 
     def test_whitespace_collapsed_when_enabled(self, tmp_path: Path) -> None:
         from fscrawler.parser import TikaParser

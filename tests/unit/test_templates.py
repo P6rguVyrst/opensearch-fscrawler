@@ -1,7 +1,5 @@
-"""Unit tests for fscrawler.templates.
-
-Upstream: https://github.com/dadoonet/fscrawler/issues/904
-"""
+"""Unit tests for fscrawler.templates."""
+# Upstream: https://github.com/dadoonet/fscrawler/issues/904
 
 from __future__ import annotations
 
@@ -67,12 +65,10 @@ class TestTemplateValidity:
         assert isinstance(data, dict)
 
 
+# Upstream: https://github.com/dadoonet/fscrawler/issues/904
+# Upstream: https://github.com/dadoonet/fscrawler/issues/890
 class TestMappingTypes:
-    """Validate field types prevent mapping conflicts.
-
-    Upstream: https://github.com/dadoonet/fscrawler/issues/904
-    Upstream: https://github.com/dadoonet/fscrawler/issues/890
-    """
+    """Validate field types prevent mapping conflicts."""
 
     def test_filesize_uses_long_type(self) -> None:
         data = json.loads((_TEMPLATES_DIR / "mapping_file.json").read_text())
