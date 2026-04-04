@@ -29,6 +29,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Breaking:** `--log-otel-endpoint` / `FSCRAWLER_LOG_OTEL_ENDPOINT` renamed to `--otel-endpoint` / `FSCRAWLER_OTEL_ENDPOINT`
 - Bulk errors now parsed per-item and routed to DLQ (retryable) or PFQ (non-retryable) instead of being logged and dropped
 
+### Upstream Issues Addressed (retroactive)
+
+The following open issues in the Java upstream
+([dadoonet/fscrawler](https://github.com/dadoonet/fscrawler)) are resolved by
+architectural decisions already present in this release:
+
+- **[#987](https://github.com/dadoonet/fscrawler/issues/987) — Crawl statistics in a monitoring stack:**
+  OpenTelemetry metrics (`fscrawler.documents.processed`, `fscrawler.dlq.records`,
+  `fscrawler.bulk.duration`, etc.) with Prometheus `/metrics` endpoint and OTLP push.
+- **[#868](https://github.com/dadoonet/fscrawler/issues/868) — Monitor progress from logs or terminal:**
+  Structured JSON logging with per-document status, OTel log export, and metrics
+  instrumentation provide full visibility into crawl progress.
+- **[#1824](https://github.com/dadoonet/fscrawler/issues/1824) — Add/document support for OpenSearch:**
+  This project is built for OpenSearch from the ground up — native `opensearch-py`
+  client, OpenSearch-compatible index templates, and OpenSearch Dashboards integration.
+- **[#399](https://github.com/dadoonet/fscrawler/issues/399) / [#943](https://github.com/dadoonet/fscrawler/issues/943) — Filesystem events (inotify/fsevents) instead of polling:**
+  Watchdog-based event-driven indexing replaces the Java polling loop. Files are
+  indexed on create/modify/delete events in real time via `--loop` mode.
+- **[#529](https://github.com/dadoonet/fscrawler/issues/529) — Event-driven architecture with separate workers:**
+  Crawling, parsing (Tika HTTP), and indexing (BulkIndexer) run as independent
+  components. WAL provides crash-recovery durability between stages.
+- **[#813](https://github.com/dadoonet/fscrawler/issues/813) — Load balancer URL for cluster:**
+  The `opensearch-py` client natively supports load-balanced and proxied endpoints
+  without special configuration.
+- **[#331](https://github.com/dadoonet/fscrawler/issues/331) — Test for continue_on_error option:**
+  DLQ/PFQ routing with error classification, plus unit tests covering
+  `continue_on_error` behavior in crawler, watcher, and indexer.
+
 ### Dependencies
 - `opentelemetry-api>=1.20`
 - `opentelemetry-sdk>=1.20`
