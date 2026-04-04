@@ -17,7 +17,7 @@ FSCrawler has no metrics instrumentation. All failure observability comes from s
 ## Design Principles
 
 - **OTel semantic conventions first** — metric names, attribute keys, and instrument types follow the OpenTelemetry specification. See References section for exact documents.
-- **One metric for success + failure** — per [open-telemetry/semantic-conventions: recording-errors.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/general/recording-errors.md), prefer a single metric with `error.type` attribute (present only on failure) over separate success/failure metrics. This lets users derive throughput and error rates from one time series.
+- **One metric for success + failure** — per [open-telemetry/semantic-conventions: recording-errors.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/general/recording-errors.md), prefer a single metric over separate success/failure metrics. We add an explicit `status` attribute (`success` / `error`) for clean PromQL filtering, and `error.type` is present only on failures. This lets users derive throughput, error rates, and SLIs from one time series.
 - **Low-cardinality attributes** — `error.type` values are a fixed, documented set (< 10 values). See [open-telemetry/semantic-conventions: error.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/registry/attributes/error.md) (Stable).
 - **Always collected, export is optional** — instruments are initialized on startup regardless of config. The OTel SDK aggregates in-place (counters are atomic integers, histograms are fixed-size bucket arrays) — memory is O(number of unique metric+attribute combinations), not O(number of events). No exporter configured = no export, no memory growth.
 - **Business logic stays clean** — all OTel SDK setup lives in `metrics.py`. Other modules import instruments and call `.add()` / `.record()`.
@@ -28,11 +28,15 @@ FSCrawler has no metrics instrumentation. All failure observability comes from s
 
 | Metric | Type | Unit | Attributes | Purpose |
 |--------|------|------|------------|---------|
-| `fscrawler.documents.processed` | Counter | `{document}` | `error.type` (Conditionally Required: only on failure), `fscrawler.job.name` | Throughput + error rate in one query |
+| `fscrawler.documents.processed` | Counter | `{document}` | `status` (Required: `success` / `error`), `error.type` (Conditionally Required: only when `status=error`), `fscrawler.job.name` | Throughput + error rate + SLI in one query |
 
 Per [open-telemetry/semantic-conventions: recording-errors.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/general/recording-errors.md): "It's RECOMMENDED to report one metric that includes successes and failures as opposed to reporting two (or more) metrics depending on the operation status."
 
-Successful operations do NOT include the `error.type` attribute, allowing users to filter errors with `{error_type!=""}` in PromQL.
+Every increment carries an explicit `status` attribute:
+- `status="success"` — document processed successfully (no `error.type` attribute)
+- `status="error"` — document processing failed (`error.type` attribute present)
+
+This avoids relying on attribute presence/absence for PromQL filtering, which is fragile. Instead, queries explicitly select `{status="success"}` or `{status="error"}`.
 
 ### Queue Counters
 
@@ -54,7 +58,7 @@ The dedicated queue counters complement the primary counter. The primary counter
 
 | Metric | Type | Unit | Attributes | Purpose |
 |--------|------|------|------------|---------|
-| `fscrawler.bulk.duration` | Histogram | `s` | `error.type` (Conditionally Required: only on failure), `fscrawler.job.name` | Flush latency — scaling signal for OpenSearch backend |
+| `fscrawler.bulk.duration` | Histogram | `s` | `status` (`success` / `error`), `error.type` (Conditionally Required: only when `status=error`), `fscrawler.job.name` | Flush latency — scaling signal for OpenSearch backend |
 
 Per [open-telemetry/semantic-conventions: database-metrics.md](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/db/database-metrics.md): "Duration of database client operations. Batch operations SHOULD be recorded as a single operation." and "This metric SHOULD be specified with ExplicitBucketBoundaries advisory parameter."
 
@@ -89,11 +93,12 @@ Per [open-telemetry/semantic-conventions: error.md](https://github.com/open-tele
 
 ### Custom Attributes
 
-| Attribute | Type | Description |
-|-----------|------|-------------|
-| `fscrawler.job.name` | string | Job name from settings (e.g., `"my_job"`) |
-| `fscrawler.wal.action` | string | WAL operation: `append`, `checkpoint`, `recover` |
-| `fscrawler.retry.outcome` | string | Retry result: `success`, `failure` |
+| Attribute | Type | Values | Description |
+|-----------|------|--------|-------------|
+| `status` | string | `success`, `error` | Operation outcome — always present on `documents.processed` |
+| `fscrawler.job.name` | string | | Job name from settings (e.g., `"my_job"`) |
+| `fscrawler.wal.action` | string | `append`, `checkpoint`, `recover` | WAL operation type |
+| `fscrawler.retry.outcome` | string | `success`, `failure` | Retry result |
 
 ## Export Architecture
 
@@ -166,10 +171,10 @@ from fscrawler.metrics import documents_processed, bulk_duration
 
 | Instrument | File | Location | When |
 |------------|------|----------|------|
-| `documents_processed` | `indexer.py` | `_flush_locked()` | +1 per successful item in bulk response (no `error.type`) |
-| `documents_processed` | `indexer.py` | `_route_failure()` | +1 per failed item (with `error.type`) |
-| `documents_processed` | `watcher.py` | `_index()` | +1 on success (no `error.type`) |
-| `documents_processed` | `watcher.py` | `_index()` except block | +1 on failure (with `error.type`) |
+| `documents_processed` | `indexer.py` | `_flush_locked()` | +1 per successful item: `status=success` |
+| `documents_processed` | `indexer.py` | `_route_failure()` | +1 per failed item: `status=error`, `error.type=...` |
+| `documents_processed` | `watcher.py` | `_index()` | +1 on success: `status=success` |
+| `documents_processed` | `watcher.py` | `_index()` except block | +1 on failure: `status=error`, `error.type=...` |
 | `dlq_records` | `indexer.py` | `_route_failure()` | +1 when writing retryable error to DLQ |
 | `dlq_records` | `watcher.py` | `_index()`, `_delete()` | +1 on DLQ write in except block |
 | `pfq_records` | `indexer.py` | `_route_failure()` | +1 when routing non-retryable error to PFQ |
@@ -220,29 +225,69 @@ These are standard OTel Python packages. See [open-telemetry/opentelemetry-pytho
 
 ## Example PromQL Queries
 
+Note: Prometheus converts OTel metric names by replacing `.` with `_` and appending `_total` for counters, `_seconds` for duration histograms.
+
+### Throughput and Error Rate
+
 ```promql
-# Document processing throughput (success only — no error_type label present)
-rate(fscrawler_documents_processed_total{error_type=""}[5m])
+# Document processing throughput (successful documents per second)
+rate(fscrawler_documents_processed_total{status="success"}[5m])
 
-# Error rate by type (error_type label only present on failures)
-sum by (error_type) (rate(fscrawler_documents_processed_total{error_type!=""}[5m]))
+# Error rate (failed documents per second, broken down by error type)
+sum by (error_type) (rate(fscrawler_documents_processed_total{status="error"}[5m]))
 
-# DLQ retry success rate
+# Total processing rate (all documents)
+rate(fscrawler_documents_processed_total[5m])
+```
+
+### SLIs (Service Level Indicators)
+
+The `status` attribute enables clean SLI calculation following the standard formula: **good events / total events**.
+
+```promql
+# Document processing success rate (SLI) — ratio of good events to all events
+# Target: 99.9% of documents processed successfully over a rolling window
+rate(fscrawler_documents_processed_total{status="success"}[5m])
+/
+rate(fscrawler_documents_processed_total[5m])
+
+# Same SLI over a longer window for SLO burn-rate alerting (e.g., 1h, 6h)
+sum(increase(fscrawler_documents_processed_total{status="success"}[1h]))
+/
+sum(increase(fscrawler_documents_processed_total[1h]))
+
+# DLQ retry effectiveness SLI — ratio of retries that succeed
 rate(fscrawler_dlq_retries_total{fscrawler_retry_outcome="success"}[5m])
 /
 rate(fscrawler_dlq_retries_total[5m])
+```
 
-# Bulk flush p95 latency
-histogram_quantile(0.95, rate(fscrawler_bulk_duration_seconds_bucket[5m]))
+For SLO alerting, use multi-window burn-rate alerts per the Google SRE model. Example: if the SLO is 99.9% success rate over 30 days, alert when the 1h burn rate exceeds 14.4x (consuming the entire error budget in 5% of the window) AND the 5m burn rate also exceeds 14.4x (confirming the issue is current, not stale).
 
+### Queue and WAL
+
+```promql
 # PFQ growth (documents needing human intervention)
 increase(fscrawler_pfq_records_total[1h])
 
 # WAL recovery events (indicates prior crash)
 increase(fscrawler_wal_records_total{fscrawler_wal_action="recover"}[1h])
+
+# DLQ inflow vs outflow (should trend toward zero in healthy state)
+rate(fscrawler_dlq_records_total[5m])
+-
+rate(fscrawler_dlq_retries_total{fscrawler_retry_outcome="success"}[5m])
 ```
 
-Note: Prometheus converts OTel metric names by replacing `.` with `_` and appending `_total` for counters, `_seconds` for duration histograms.
+### Latency
+
+```promql
+# Bulk flush p95 latency
+histogram_quantile(0.95, rate(fscrawler_bulk_duration_seconds_bucket[5m]))
+
+# Bulk flush p99 latency (tail — scaling signal)
+histogram_quantile(0.99, rate(fscrawler_bulk_duration_seconds_bucket[5m]))
+```
 
 ## References
 
