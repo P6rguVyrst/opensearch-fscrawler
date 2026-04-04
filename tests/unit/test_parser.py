@@ -292,6 +292,34 @@ class TestParseMetadataOnly:
         assert doc.file.filename == "large.pdf"
         assert doc.path.virtual == "/large.pdf"
 
+    def test_populates_attributes_when_enabled(self, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        f = data / "file.txt"
+        f.write_bytes(b"hello")
+        f.chmod(0o755)
+        settings = make_settings(url=str(data), attributes_support=True)
+        parser = TikaParser(settings)
+        doc = parser.parse_metadata_only(f)
+        assert doc.file.attributes is not None
+        assert doc.file.attributes["permissions"] == "755"
+        assert "owner" in doc.file.attributes
+        assert "group" in doc.file.attributes
+
+    def test_no_attributes_in_metadata_only_when_disabled(self, tmp_path: Path) -> None:
+        from fscrawler.parser import TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        f = data / "file.txt"
+        f.write_bytes(b"hello")
+        settings = make_settings(url=str(data))
+        parser = TikaParser(settings)
+        doc = parser.parse_metadata_only(f)
+        assert doc.file.attributes is None
+
 
 # ---------------------------------------------------------------------------
 # Large file streaming (Task 11)

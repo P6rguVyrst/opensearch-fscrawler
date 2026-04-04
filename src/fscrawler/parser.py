@@ -268,6 +268,8 @@ class TikaParser:
             last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
             url=str(file_path),
         )
+        if self._settings.fs.attributes_support:
+            file_info.attributes = _get_file_attributes(stat)
         path_info = PathInfo(real=str(file_path), root=root, virtual=virtual)
         return Document(content=None, file=file_info, path=path_info, meta=Meta())
 
