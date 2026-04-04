@@ -163,6 +163,9 @@ class FsEventHandler(FileSystemEventHandler):
                 logger.error("Failed to write to DLQ for %s: %s", path, dlq_exc)
 
     def _delete(self, path: str) -> None:
+        doc_id = None
+        job_name = self._settings.name
+        target_index = self._settings.elasticsearch.index
         try:
             root = self._settings.fs.url
             try:
@@ -170,12 +173,11 @@ class FsEventHandler(FileSystemEventHandler):
             except ValueError:
                 virtual = "/" + Path(path).name
             doc_id = make_doc_id(virtual)
-            target_index = self._settings.elasticsearch.index
 
             if self._wal:
                 self._wal.append({
                     "ts": datetime.now(tz=UTC).isoformat(),
-                    "job_name": self._settings.name,
+                    "job_name": job_name,
                     "target_index": target_index,
                     "doc_id": doc_id,
                     "action": "delete",
@@ -186,24 +188,36 @@ class FsEventHandler(FileSystemEventHandler):
                 index=target_index,
             )
             logger.info("Deleted %s from index", path)
+            documents_processed.add(1, {
+                "status": "success",
+                "fscrawler.job.name": job_name,
+            })
 
             if self._wal:
                 self._wal.checkpoint({doc_id})
 
         except Exception as exc:
             logger.error("Failed to delete %s from index: %s", path, exc, exc_info=True)
+            error_type_name = type(exc).__name__
+            documents_processed.add(1, {
+                "status": "error",
+                "error.type": error_type_name,
+                "fscrawler.job.name": job_name,
+            })
+            if doc_id is None:
+                doc_id = make_doc_id("/" + Path(path).name)
             try:
                 dlq_record = build_dlq_record(
-                    job_name=self._settings.name,
-                    target_index=self._settings.elasticsearch.index,
+                    job_name=job_name,
+                    target_index=target_index,
                     doc_id=doc_id,
                     action="delete",
                     payload=None,
-                    error_type=type(exc).__name__,
+                    error_type=error_type_name,
                     error_message=str(exc),
                     source_path=path,
                 )
-                dlq_doc_id = make_dlq_doc_id(self._settings.name, doc_id)
+                dlq_doc_id = make_dlq_doc_id(job_name, doc_id)
                 self._client.index_raw(
                     index=DLQ_INDEX,
                     doc_id=dlq_doc_id,
@@ -211,8 +225,8 @@ class FsEventHandler(FileSystemEventHandler):
                 )
                 logger.info("Wrote failed delete %s to DLQ", doc_id)
                 dlq_records.add(1, {
-                    "error.type": type(exc).__name__,
-                    "fscrawler.job.name": self._settings.name,
+                    "error.type": error_type_name,
+                    "fscrawler.job.name": job_name,
                 })
             except Exception as dlq_exc:
                 logger.error("Failed to write to DLQ for delete %s: %s", path, dlq_exc)

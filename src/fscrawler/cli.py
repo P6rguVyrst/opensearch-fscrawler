@@ -184,13 +184,27 @@ def _recover_wal(client: FsCrawlerClient, wal: WriteAheadLog) -> None:
 
     if operations:
         try:
-            client.bulk(operations)
+            response = client.bulk(operations)
         except Exception as exc:
             logger.error("WAL: recovery bulk failed: %s", exc)
             return
-        wal.checkpoint(doc_ids)
-        logger.info("WAL: recovery complete, %d records replayed", len(records))
-        for _ in records:
+
+        succeeded_ids = set(doc_ids)
+        if response.get("errors"):
+            for item in response.get("items", []):
+                op = item.get("index") or item.get("delete") or {}
+                if op.get("error"):
+                    failed_id = op.get("_id", "")
+                    succeeded_ids.discard(failed_id)
+                    logger.warning("WAL: recovery failed for %s: %s", failed_id, op["error"])
+
+        if succeeded_ids:
+            wal.checkpoint(succeeded_ids)
+            logger.info("WAL: recovery complete, %d/%d records succeeded", len(succeeded_ids), len(records))
+        else:
+            logger.warning("WAL: all %d recovery records failed, nothing checkpointed", len(records))
+
+        for _ in range(len(succeeded_ids)):
             wal_records.add(1, {"fscrawler.wal.action": "recover"})
 
 

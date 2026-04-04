@@ -310,6 +310,35 @@ class TestFsEventHandlerWalDlq:
         assert body["action"] == "delete"
         assert body["error_type"] == "RuntimeError"
 
+    def test_delete_early_exception_uses_fallback_doc_id(self) -> None:
+        """B1: If _delete() fails before doc_id is assigned, use a fallback ID for DLQ."""
+        import hashlib
+
+        mock_wal = MagicMock()
+        handler, client, parser, mock_doc = self._make_handler(wal=mock_wal)
+
+        # Simulate: client.delete raises, but doc_id was never assigned
+        # because make_doc_id raised on first call but works on fallback call
+        call_count = 0
+        original = handler._client.delete
+
+        def fail_on_first(*a, **kw):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("hash failed")
+            return original(*a, **kw)
+
+        with patch("fscrawler.watcher.make_doc_id", side_effect=fail_on_first):
+            handler._delete("/data/test.txt")
+
+        # DLQ write should still happen with a fallback doc_id
+        client.index_raw.assert_called_once()
+        call_kwargs = client.index_raw.call_args[1]
+        assert call_kwargs["index"] == "fscrawler_dlq"
+        body = call_kwargs["body"]
+        assert body["doc_id"] is not None
+
 
 # ---------------------------------------------------------------------------
 # OTel metrics instrumentation
@@ -341,3 +370,28 @@ class TestWatcherMetrics:
             client.index.side_effect = RuntimeError("opensearch down")
             handler.on_created(_file_event(None, "/data/doc.pdf"))
             mock_dlq.add.assert_called_once()
+
+    def test_delete_success_increments_documents_processed(self) -> None:
+        """_delete() must emit documents_processed on success (I1)."""
+        settings = make_settings(fs={"url": "/data", "remove_deleted": True})
+        with patch("fscrawler.watcher.documents_processed") as mock_counter:
+            handler, client, _ = make_handler(settings=settings)
+            handler.on_deleted(_file_event(None, "/data/old.pdf"))
+            mock_counter.add.assert_called()
+            call_args = mock_counter.add.call_args
+            assert call_args[0][1]["status"] == "success"
+
+    def test_delete_failure_increments_documents_processed_error(self) -> None:
+        """_delete() must emit documents_processed on error (I1)."""
+        settings = make_settings(fs={"url": "/data", "remove_deleted": True})
+        with patch("fscrawler.watcher.documents_processed") as mock_counter:
+            handler, client, _ = make_handler(settings=settings)
+            client.delete.side_effect = RuntimeError("connection lost")
+            handler.on_deleted(_file_event(None, "/data/old.pdf"))
+            mock_counter.add.assert_called()
+            # Should have at least one error status call
+            error_calls = [
+                c for c in mock_counter.add.call_args_list
+                if c[0][1].get("status") == "error"
+            ]
+            assert len(error_calls) >= 1

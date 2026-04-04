@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Watcher `_index()` no longer raises `UnboundLocalError` when `doc.to_dict()` fails ��� `doc_body` initialized before try block
 - Watcher `_delete()` now writes to DLQ on failure instead of silently logging
+- Watcher `_delete()` no longer risks `UnboundLocalError` — `doc_id` initialized before try block with fallback from filename
+- Watcher `_delete()` now emits `fscrawler.documents.processed` metric on both success and error paths (previously invisible to SLI)
+- WAL recovery (`_recover_wal`) now parses per-item bulk response errors — only checkpoints succeeded items instead of blindly checkpointing all
+- `bulk_duration` histogram now uses explicit bucket boundaries from OTel database conventions instead of SDK defaults
+- Prometheus `/metrics` endpoint uses native ASGI app (`make_asgi_app()`) instead of WSGI app with middleware wrapper — eliminates starlette 1.0 breakage where `starlette.middleware.wsgi` was removed
 - DLQ retry backoff exponent off-by-one corrected — first retry delay is now 60s (not 120s)
 
 ### Changed

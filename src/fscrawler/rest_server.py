@@ -102,9 +102,7 @@ def create_app(
 
     prometheus_app = get_prometheus_app()
     if prometheus_app is not None:
-        from starlette.middleware.wsgi import WSGIMiddleware
-
-        app.mount("/metrics", WSGIMiddleware(prometheus_app))
+        app.mount("/metrics", prometheus_app)
 
     if parser is None:
         parser = TikaParser(settings)

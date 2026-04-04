@@ -56,10 +56,13 @@ wal_records: Counter = _meter.create_counter(
     unit="{record}",
 )
 
+BULK_DURATION_BOUNDARIES = [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10]
+
 bulk_duration: Histogram = _meter.create_histogram(
     name="fscrawler.bulk.duration",
     description="Duration of bulk flush operations",
     unit="s",
+    explicit_bucket_boundaries_advisory=BULK_DURATION_BOUNDARIES,
 )
 
 # ---------------------------------------------------------------------------
@@ -70,7 +73,7 @@ _prometheus_app: Any = None
 
 
 def get_prometheus_app() -> Any:
-    """Return the WSGI app that serves /metrics for Prometheus scraping.
+    """Return the ASGI app that serves /metrics for Prometheus scraping.
 
     Returns None if configure_metrics() hasn't been called with enable_prometheus=True.
     """
@@ -108,11 +111,11 @@ def configure_metrics(
 
     if enable_prometheus:
         from opentelemetry.exporter.prometheus import PrometheusMetricReader
-        from prometheus_client import make_wsgi_app
+        from prometheus_client import make_asgi_app
 
         prometheus_reader = PrometheusMetricReader()
         readers.append(prometheus_reader)
-        _prometheus_app = make_wsgi_app()
+        _prometheus_app = make_asgi_app()
         logger.info("Prometheus /metrics endpoint enabled")
 
     if otel_endpoint:

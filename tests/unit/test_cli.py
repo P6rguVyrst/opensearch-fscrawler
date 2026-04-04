@@ -283,6 +283,58 @@ class TestDlqRetryThread:
         assert call_count >= 2
 
 
+class TestWalRecoveryPartialFailure:
+    def test_recover_wal_partial_failure_only_checkpoints_succeeded(self) -> None:
+        """B2: If bulk returns errors for some items, only checkpoint succeeded IDs."""
+        from fscrawler.cli import _recover_wal
+
+        client = MagicMock()
+        client.bulk.return_value = {
+            "errors": True,
+            "items": [
+                {"index": {"_id": "ok1", "status": 201}},
+                {"index": {"_id": "fail1", "status": 429, "error": {"type": "circuit_breaking_exception", "reason": "overloaded"}}},
+                {"index": {"_id": "ok2", "status": 200}},
+            ],
+        }
+        wal = MagicMock()
+        wal.is_empty = False
+        wal.read.return_value = [
+            {"job_name": "test", "target_index": "idx", "doc_id": "ok1", "action": "index", "payload": {"a": 1}},
+            {"job_name": "test", "target_index": "idx", "doc_id": "fail1", "action": "index", "payload": {"b": 2}},
+            {"job_name": "test", "target_index": "idx", "doc_id": "ok2", "action": "index", "payload": {"c": 3}},
+        ]
+
+        _recover_wal(client, wal)
+
+        wal.checkpoint.assert_called_once()
+        checkpointed = wal.checkpoint.call_args[0][0]
+        assert "ok1" in checkpointed
+        assert "ok2" in checkpointed
+        assert "fail1" not in checkpointed
+
+    def test_recover_wal_all_items_fail_does_not_checkpoint(self) -> None:
+        """B2: If all bulk items fail, do not checkpoint anything."""
+        from fscrawler.cli import _recover_wal
+
+        client = MagicMock()
+        client.bulk.return_value = {
+            "errors": True,
+            "items": [
+                {"index": {"_id": "fail1", "status": 429, "error": {"type": "timeout"}}},
+            ],
+        }
+        wal = MagicMock()
+        wal.is_empty = False
+        wal.read.return_value = [
+            {"job_name": "test", "target_index": "idx", "doc_id": "fail1", "action": "index", "payload": {"a": 1}},
+        ]
+
+        _recover_wal(client, wal)
+
+        wal.checkpoint.assert_not_called()
+
+
 class TestWalRecoveryMetrics:
     def test_recover_wal_increments_wal_records_recover(self) -> None:
         from fscrawler.cli import _recover_wal

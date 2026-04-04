@@ -55,6 +55,14 @@ class TestInstruments:
         assert wal_records is not None
 
 
+class TestHistogramBucketBoundaries:
+    def test_bulk_duration_has_explicit_bucket_boundaries(self) -> None:
+        """I2: bulk_duration histogram must use the OTel database convention boundaries."""
+        from fscrawler.metrics import BULK_DURATION_BOUNDARIES
+        expected = [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10]
+        assert BULK_DURATION_BOUNDARIES == expected
+
+
 class TestGetPrometheusApp:
     def test_returns_app_after_configure(self) -> None:
         from fscrawler.metrics import configure_metrics, get_prometheus_app
