@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -196,3 +196,88 @@ class TestWatcherNewId:
         expected_id = hashlib.sha256("/test.txt".encode()).hexdigest()
         call_kwargs = mock_client.delete.call_args[1]
         assert call_kwargs["doc_id"] == expected_id
+
+
+# ---------------------------------------------------------------------------
+# WAL + DLQ integration
+# ---------------------------------------------------------------------------
+
+
+class TestFsEventHandlerWalDlq:
+    """Tests for WAL durability and DLQ routing in FsEventHandler."""
+
+    def _make_handler(self, wal=None):
+        from fscrawler.watcher import FsEventHandler
+
+        settings = make_settings(fs={"url": "/data", "remove_deleted": True})
+        client = MagicMock()
+        parser = MagicMock()
+        crawler_state = MagicMock(paused=False)
+
+        mock_doc = MagicMock()
+        mock_doc.path.virtual = "/test.txt"
+        mock_doc.path.real = "/data/test.txt"
+        mock_doc.to_dict.return_value = {"content": "hello"}
+        parser.parse.return_value = mock_doc
+
+        handler = FsEventHandler(settings, client, parser, crawler_state, wal=wal)
+        return handler, client, parser, mock_doc
+
+    def test_index_writes_to_wal_before_client(self) -> None:
+        mock_wal = MagicMock()
+        handler, client, parser, mock_doc = self._make_handler(wal=mock_wal)
+
+        handler._index(Path("/data/test.txt"))
+
+        mock_wal.append.assert_called_once()
+        record = mock_wal.append.call_args[0][0]
+        assert record["action"] == "index"
+        assert record["doc_id"] is not None
+        assert record["payload"] == {"content": "hello"}
+
+    def test_index_success_checkpoints_wal(self) -> None:
+        mock_wal = MagicMock()
+        handler, client, parser, mock_doc = self._make_handler(wal=mock_wal)
+
+        handler._index(Path("/data/test.txt"))
+
+        mock_wal.checkpoint.assert_called_once()
+        checkpoint_ids = mock_wal.checkpoint.call_args[0][0]
+        assert isinstance(checkpoint_ids, set)
+        assert len(checkpoint_ids) == 1
+
+    def test_index_failure_writes_to_dlq(self) -> None:
+        mock_wal = MagicMock()
+        handler, client, parser, mock_doc = self._make_handler(wal=mock_wal)
+        client.index.side_effect = RuntimeError("opensearch down")
+
+        handler._index(Path("/data/test.txt"))
+
+        # DLQ write via index_raw
+        client.index_raw.assert_called_once()
+        call_kwargs = client.index_raw.call_args[1]
+        assert call_kwargs["index"] == "fscrawler_dlq"
+        body = call_kwargs["body"]
+        assert body["error_type"] == "RuntimeError"
+        assert body["error_message"] == "opensearch down"
+
+    def test_delete_writes_to_wal(self) -> None:
+        mock_wal = MagicMock()
+        handler, client, parser, mock_doc = self._make_handler(wal=mock_wal)
+
+        handler._delete("/data/test.txt")
+
+        mock_wal.append.assert_called_once()
+        record = mock_wal.append.call_args[0][0]
+        assert record["action"] == "delete"
+        assert record["doc_id"] is not None
+
+    def test_handler_works_without_wal(self) -> None:
+        handler, client, parser, mock_doc = self._make_handler(wal=None)
+
+        # Should work without error
+        handler._index(Path("/data/test.txt"))
+        client.index.assert_called_once()
+
+        handler._delete("/data/test.txt")
+        client.delete.assert_called_once()
