@@ -151,6 +151,7 @@ class RestConfig:
 
     url: str = "http://127.0.0.1:8080"
     enable_cors: bool = False
+    max_body_size: int = 104857600  # 100 MB default
 
 
 def _apply_env_to_raw(raw: dict[str, Any], env: dict[str, str]) -> None:
@@ -347,6 +348,8 @@ class FsSettings:
             rest.url = rest_data["url"]
         if "enable_cors" in rest_data:
             rest.enable_cors = bool(rest_data["enable_cors"])
+        if "max_body_size" in rest_data:
+            rest.max_body_size = parse_byte_size(str(rest_data["max_body_size"]))
 
         return cls(name=str(name), fs=fs, elasticsearch=es, rest=rest)
 

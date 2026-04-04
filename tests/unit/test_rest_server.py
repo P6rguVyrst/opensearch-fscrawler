@@ -468,6 +468,27 @@ class TestCrawlerStateThreadSafety:
         assert isinstance(state._paused_event, threading.Event)
 
 
+class TestMaxBodySize:
+    """Reject uploads exceeding max body size.
+
+    Upstream: https://github.com/dadoonet/fscrawler/issues/1709
+    """
+
+    def test_upload_exceeding_limit_returns_413(self) -> None:
+        settings = make_settings(rest={"url": "http://127.0.0.1:8080", "max_body_size": "1kb"})
+        tc = make_app(settings=settings)
+        headers, body = _multipart_body(data=b"x" * 2048)
+        response = tc.post("/_document", content=body, headers=headers)
+        assert response.status_code == 413
+
+    def test_upload_within_limit_succeeds(self) -> None:
+        settings = make_settings(rest={"url": "http://127.0.0.1:8080", "max_body_size": "1mb"})
+        tc = make_app(settings=settings)
+        headers, body = _multipart_body(data=b"small content")
+        response = tc.post("/_document", content=body, headers=headers)
+        assert response.status_code == 200
+
+
 class TestCors:
     def test_cors_disabled_no_header_on_get(self) -> None:
         settings = make_settings(rest={"url": "http://127.0.0.1:8080", "enable_cors": False})
