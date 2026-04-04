@@ -723,3 +723,55 @@ class TestClockSkewTolerance:
         c2 = LocalCrawler(settings, config_dir=tmp_path)
         result = [f for f in c2.scan() if c2.is_new_or_modified(f)]
         assert len(result) == 0
+
+
+# ---------------------------------------------------------------------------
+# Unicode normalization (Task 7)
+# ---------------------------------------------------------------------------
+
+
+class TestUnicodeNormalization:
+    """Normalize filenames to NFC for cross-platform consistency."""
+
+    def test_nfd_filename_normalized_to_nfc(self, tmp_path: Path) -> None:
+        import unicodedata
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        nfd_name = unicodedata.normalize("NFD", "café.txt")
+        (data / nfd_name).write_bytes(b"text")
+        settings = make_settings(tmp_path)
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = list(crawler.scan())
+        assert len(found) == 1
+        # Checkpoint key must be NFC-normalized
+        crawler.save_checkpoint()
+        checkpoint_file = tmp_path / ".fscrawler_checkpoint.json"
+        cp_data = json.loads(checkpoint_file.read_text())
+        for key in cp_data:
+            assert key == unicodedata.normalize("NFC", key), (
+                f"Checkpoint key is not NFC: {key!r}"
+            )
+
+    def test_nfd_checkpoint_roundtrip(self, tmp_path: Path) -> None:
+        """NFD file on disk → NFC checkpoint → second run sees it as unchanged."""
+        import unicodedata
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        nfd_name = unicodedata.normalize("NFD", "café.txt")
+        (data / nfd_name).write_bytes(b"text")
+        settings = make_settings(tmp_path)
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = list(crawler.scan())
+        assert len(found) == 1
+        crawler.save_checkpoint()
+
+        # Second run — file unchanged, should not be detected as new/modified
+        crawler2 = LocalCrawler(settings, config_dir=tmp_path)
+        result = [f for f in crawler2.scan() if crawler2.is_new_or_modified(f)]
+        assert len(result) == 0

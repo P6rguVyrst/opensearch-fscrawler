@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -89,9 +90,10 @@ class FsEventHandler(FileSystemEventHandler):
     def _virtual_path(self, path: Path) -> str:
         """Compute the virtual path relative to the crawl root."""
         try:
-            return "/" + path.relative_to(self._root).as_posix()
+            raw = "/" + path.relative_to(self._root).as_posix()
         except ValueError:
-            return "/" + path.name
+            raw = "/" + path.name
+        return unicodedata.normalize("NFC", raw)
 
     @staticmethod
     def _matches_pattern(name: str, virtual_path: str, pattern: str) -> bool:

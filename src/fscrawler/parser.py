@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import logging
+import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -159,6 +160,7 @@ class TikaParser:
             virtual = "/" + str(file_path.relative_to(root))
         except ValueError:
             virtual = "/" + file_path.name
+        virtual = unicodedata.normalize("NFC", virtual)
 
         path_info = PathInfo(real=str(file_path), root=root, virtual=virtual)
 

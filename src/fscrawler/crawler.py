@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import stat as stat_module
+import unicodedata
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -18,6 +19,11 @@ logger = logging.getLogger("fscrawler.crawler")
 _CHECKPOINT_FILENAME = ".fscrawler_checkpoint.json"
 _IGNORE_SENTINEL = ".fscrawlerignore"
 _CLOCK_SKEW_SECONDS = 2.0
+
+
+def _normalize_name(name: str) -> str:
+    """Normalize filename to NFC for cross-platform consistency."""
+    return unicodedata.normalize("NFC", name)
 
 
 def _matches_pattern(name: str, virtual_path: str, pattern: str) -> bool:
@@ -77,7 +83,7 @@ class LocalCrawler:
             except OSError:
                 continue
 
-            self._current_checkpoint[str(path)] = mtime
+            self._current_checkpoint[unicodedata.normalize("NFC", str(path))] = mtime
             yield path
 
     def is_new_or_modified(self, path: Path) -> bool:
@@ -87,7 +93,7 @@ class LocalCrawler:
         mtime drifted slightly backward (e.g. NFS/CIFS clock skew) are still
         picked up.
         """
-        key = str(path)
+        key = unicodedata.normalize("NFC", str(path))
         if key not in self._previous_checkpoint:
             return True
         try:
@@ -223,7 +229,7 @@ class LocalCrawler:
                 self._visited.add(dir_key)
                 yield from self._walk(Path(entry.path))
             elif entry.is_file(follow_symlinks=fs.follow_symlinks):
-                name = entry.name
+                name = _normalize_name(entry.name)
                 virtual_path = "/" + Path(entry.path).relative_to(self._root).as_posix()
 
                 # includes: if set, file must match at least one pattern
