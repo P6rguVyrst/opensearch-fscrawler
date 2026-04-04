@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-04-04
+
+### Fixed
+- **#955 owner name test was a no-op:** Replaced `or True` assertion with mock-based test that verifies `pwd.getpwuid` name resolution. Added `KeyError` fallback test.
+- **#566 streaming test didn't verify streaming:** Added assertions that large files pass a file handle (not bytes) to Tika, and small files pass bytes.
+- **#1605 metadata-only docs missing checksum and content_type:** `parse_metadata_only()` now computes a streaming checksum and infers `content_type` from the file extension via `mimetypes`.
+- **#1300 `_delete()` path uses `str()` instead of `as_posix()`:** Fixed to use `.as_posix()` for cross-platform virtual path consistency.
+- **#904 filename store=true untested:** Added explicit assertion for `file.filename` having `store: true` in mapping template.
+
+### Changed
+- **Corrected upstream issue attributions:** `#1709` comment now notes this is a Python-side safeguard (not a Jackson fix). `#1093` comment now notes this monitors the Observer thread (not the crawl thread). `#904` attribution corrected to `#890` for field type tests.
+
 ## [0.5.0] - 2026-04-04
 
 ### Added
