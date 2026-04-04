@@ -1,0 +1,10 @@
+{
+  "query": {
+    "bool": {
+      "filter": [
+        { "range": { "next_retry": { "lte": "now" } } }
+      ]
+    }
+  },
+  "size": 100
+}
