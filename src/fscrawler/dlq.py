@@ -10,6 +10,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from fscrawler.metrics import dlq_retries, pfq_records
+
 logger = logging.getLogger("fscrawler.dlq")
 
 _QUERIES_DIR = Path(__file__).parent / "_queries"
@@ -156,6 +158,14 @@ def _retry_single_record(
                 "Promoted %s to PFQ after %d retries: %s",
                 dlq_doc_id, new_count, error_msg,
             )
+            dlq_retries.add(1, {
+                "fscrawler.retry.outcome": "failure",
+                "fscrawler.job.name": job_name,
+            })
+            pfq_records.add(1, {
+                "error.type": source.get("error_type", "unknown"),
+                "fscrawler.job.name": job_name,
+            })
         else:
             now = datetime.now(tz=UTC)
             delay = calculate_next_retry_delay(
@@ -173,8 +183,16 @@ def _retry_single_record(
                 "Retry %d for %s failed, next retry in %ds: %s",
                 new_count, dlq_doc_id, delay, error_msg,
             )
+            dlq_retries.add(1, {
+                "fscrawler.retry.outcome": "failure",
+                "fscrawler.job.name": job_name,
+            })
         return
 
     # Success: remove from DLQ
     client.delete_document(index=DLQ_INDEX, doc_id=dlq_doc_id)
     logger.info("Successfully retried %s, removed from DLQ", dlq_doc_id)
+    dlq_retries.add(1, {
+        "fscrawler.retry.outcome": "success",
+        "fscrawler.job.name": job_name,
+    })

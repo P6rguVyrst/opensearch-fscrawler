@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestErrorClassification:
@@ -296,3 +296,48 @@ class TestRunRetryCycle:
             if (c[1].get("index") == DLQ_INDEX)
         ]
         assert len(dlq_delete_calls) == 1
+
+
+class TestDlqMetrics:
+    def test_successful_retry_increments_dlq_retries_success(self) -> None:
+        from fscrawler.dlq import run_retry_cycle
+
+        client = MagicMock()
+        hit = _make_dlq_hit()
+        client.search.return_value = {"hits": {"hits": [hit]}}
+        client.bulk.return_value = {"errors": False}
+        config = _make_config()
+
+        with patch("fscrawler.dlq.dlq_retries") as mock_retries:
+            run_retry_cycle(client, config)
+            mock_retries.add.assert_called_once()
+            attrs = mock_retries.add.call_args[0][1]
+            assert attrs["fscrawler.retry.outcome"] == "success"
+
+    def test_failed_retry_increments_dlq_retries_failure(self) -> None:
+        from fscrawler.dlq import run_retry_cycle
+
+        client = MagicMock()
+        hit = _make_dlq_hit(retry_count=1)
+        client.search.return_value = {"hits": {"hits": [hit]}}
+        client.bulk.side_effect = Exception("cluster overloaded")
+        config = _make_config(max_retries=5)
+
+        with patch("fscrawler.dlq.dlq_retries") as mock_retries:
+            run_retry_cycle(client, config)
+            mock_retries.add.assert_called_once()
+            attrs = mock_retries.add.call_args[0][1]
+            assert attrs["fscrawler.retry.outcome"] == "failure"
+
+    def test_max_retries_increments_pfq_records(self) -> None:
+        from fscrawler.dlq import run_retry_cycle
+
+        client = MagicMock()
+        hit = _make_dlq_hit(retry_count=4)
+        client.search.return_value = {"hits": {"hits": [hit]}}
+        client.bulk.side_effect = Exception("still broken")
+        config = _make_config(max_retries=5)
+
+        with patch("fscrawler.dlq.pfq_records") as mock_pfq:
+            run_retry_cycle(client, config)
+            mock_pfq.add.assert_called_once()
