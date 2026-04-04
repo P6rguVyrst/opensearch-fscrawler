@@ -76,6 +76,19 @@ class FsEventHandler(FileSystemEventHandler):
             return
         self._index(p)
 
+    def on_moved(self, event: Any) -> None:
+        """Handle file move: delete old path, index new path."""
+        if event.is_directory or self._crawler_state.paused:
+            return
+        # Delete old location
+        if self._settings.fs.remove_deleted:
+            self._delete(event.src_path)
+        # Index new location
+        p = Path(event.dest_path)
+        if not self._matches(p.name, self._virtual_path(p)):
+            return
+        self._index(p)
+
     def on_deleted(self, event: Any) -> None:
         if event.is_directory or self._crawler_state.paused:
             return

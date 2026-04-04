@@ -434,3 +434,81 @@ class TestWatcherFullPathFilters:
         handler, client, _ = make_handler(settings=settings)
         handler.on_modified(_file_event(None, "/data/logs/debug.log"))
         client.index.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# on_moved (Task 8)
+# ---------------------------------------------------------------------------
+
+
+class TestOnMoved:
+    """Handle file move events — reindex at new path.
+
+    Upstream: https://github.com/dadoonet/fscrawler/issues/1300
+    """
+
+    def test_moved_file_reindexed_at_new_path(self, tmp_path: Path) -> None:
+        (tmp_path / "data").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "data" / "new_name.txt").write_bytes(b"content")
+
+        settings = make_settings(fs={"url": str(tmp_path / "data"), "remove_deleted": True})
+        handler, client, parser = make_handler(settings=settings)
+
+        event = MagicMock()
+        event.is_directory = False
+        event.src_path = str(tmp_path / "data" / "old_name.txt")
+        event.dest_path = str(tmp_path / "data" / "new_name.txt")
+
+        handler.on_moved(event)
+
+        # Old path should be deleted
+        client.delete.assert_called_once()
+        # New path should be indexed
+        client.index.assert_called_once()
+
+    def test_moved_directory_ignored(self) -> None:
+        settings = make_settings(fs={"url": "/data", "remove_deleted": True})
+        handler, client, _ = make_handler(settings=settings)
+
+        event = MagicMock()
+        event.is_directory = True
+        event.src_path = "/data/old_dir"
+        event.dest_path = "/data/new_dir"
+
+        handler.on_moved(event)
+
+        client.delete.assert_not_called()
+        client.index.assert_not_called()
+
+    def test_moved_respects_paused_state(self) -> None:
+        settings = make_settings(fs={"url": "/data", "remove_deleted": True})
+        handler, client, _ = make_handler(settings=settings, paused=True)
+
+        event = MagicMock()
+        event.is_directory = False
+        event.src_path = "/data/old.txt"
+        event.dest_path = "/data/new.txt"
+
+        handler.on_moved(event)
+
+        client.delete.assert_not_called()
+        client.index.assert_not_called()
+
+    def test_moved_skips_delete_when_remove_deleted_false(self, tmp_path: Path) -> None:
+        (tmp_path / "data").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "data" / "new.txt").write_bytes(b"content")
+
+        settings = make_settings(fs={"url": str(tmp_path / "data"), "remove_deleted": False})
+        handler, client, parser = make_handler(settings=settings)
+
+        event = MagicMock()
+        event.is_directory = False
+        event.src_path = str(tmp_path / "data" / "old.txt")
+        event.dest_path = str(tmp_path / "data" / "new.txt")
+
+        handler.on_moved(event)
+
+        # Should NOT delete old path when remove_deleted is False
+        client.delete.assert_not_called()
+        # Should still index new path
+        client.index.assert_called_once()
