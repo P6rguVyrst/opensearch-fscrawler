@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import fnmatch
 import json
 import logging
@@ -40,6 +41,7 @@ class LocalCrawler:
         self._settings = settings
         self._config_dir = config_dir
         self._root = Path(settings.fs.url)
+        self._resolved_root = self._root.resolve()
         self._checkpoint_file = config_dir / _CHECKPOINT_FILENAME
 
         # Loaded at construction time from the previous run
@@ -141,11 +143,24 @@ class LocalCrawler:
         yield from self._walk_dirs(self._root)
 
     def save_checkpoint(self) -> None:
-        """Persist the current checkpoint to disk."""
-        self._checkpoint_file.write_text(
-            json.dumps(self._current_checkpoint, indent=2),
-            encoding="utf-8",
+        """Persist the current checkpoint to disk via atomic rewrite."""
+        import tempfile
+
+        data = json.dumps(self._current_checkpoint, indent=2).encode("utf-8")
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(self._checkpoint_file.parent),
+            prefix=".checkpoint_tmp_",
         )
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, str(self._checkpoint_file))
+        except Exception:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_path)
+            raise
         logger.debug("Checkpoint saved to %s", self._checkpoint_file)
 
     # ------------------------------------------------------------------
@@ -187,6 +202,10 @@ class LocalCrawler:
                 if dir_key in self._visited:
                     logger.warning("Symlink cycle detected, skipping: %s", entry.path)
                     continue
+                # Prevent symlinks from escaping the crawl root
+                if fs.follow_symlinks and not Path(entry.path).resolve().is_relative_to(self._resolved_root):
+                    logger.warning("Symlink escapes crawl root, skipping: %s", entry.path)
+                    continue
                 self._visited.add(dir_key)
                 child = Path(entry.path)
                 if (child / _IGNORE_SENTINEL).exists():
@@ -224,9 +243,17 @@ class LocalCrawler:
                 if dir_key in self._visited:
                     logger.warning("Symlink cycle detected, skipping: %s", entry.path)
                     continue
+                # Prevent symlinks from escaping the crawl root
+                if fs.follow_symlinks and not Path(entry.path).resolve().is_relative_to(self._resolved_root):
+                    logger.warning("Symlink escapes crawl root, skipping: %s", entry.path)
+                    continue
                 self._visited.add(dir_key)
                 yield from self._walk(Path(entry.path))
             elif entry.is_file(follow_symlinks=fs.follow_symlinks):
+                # Prevent symlinks from escaping the crawl root
+                if fs.follow_symlinks and entry.is_symlink() and not Path(entry.path).resolve().is_relative_to(self._resolved_root):
+                    logger.warning("Symlink escapes crawl root, skipping: %s", entry.path)
+                    continue
                 name = _normalize_name(entry.name)
                 virtual_path = "/" + Path(entry.path).relative_to(self._root).as_posix()
 

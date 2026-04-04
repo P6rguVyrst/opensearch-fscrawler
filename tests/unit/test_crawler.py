@@ -278,7 +278,7 @@ class TestCrawlerSymlinks:
     def test_follow_symlinks_true(self, tmp_path: Path) -> None:
         data = tmp_path / "data"
         data.mkdir()
-        real = tmp_path / "real.txt"
+        real = data / "real.txt"
         real.write_bytes(b"real")
         link = data / "link.txt"
         link.symlink_to(real)
@@ -289,6 +289,22 @@ class TestCrawlerSymlinks:
         crawler = LocalCrawler(settings, config_dir=tmp_path)
         found = [f.name for f in crawler.scan()]
         assert "link.txt" in found
+
+    def test_symlink_escaping_root_is_blocked(self, tmp_path: Path) -> None:
+        """A symlink pointing outside the crawl root must be skipped."""
+        data = tmp_path / "data"
+        data.mkdir()
+        outside = tmp_path / "outside.txt"
+        outside.write_bytes(b"secret")
+        link = data / "escape.txt"
+        link.symlink_to(outside)
+
+        settings = make_settings(tmp_path, follow_symlinks=True)
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = [f.name for f in crawler.scan()]
+        assert "escape.txt" not in found
 
     def test_symlink_cycle_does_not_hang(self, tmp_path: Path) -> None:
         """A symlink that points back to an ancestor must not cause infinite recursion."""

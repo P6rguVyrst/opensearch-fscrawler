@@ -25,23 +25,18 @@ Affected: `src/fscrawler/rest_server.py` — all endpoints.
 
 ### HIGH
 
-**REST-2 — Unbounded request body (DoS / OOM)**
-`POST /_document` and `PUT /_document/{id}` read the entire upload body into
-memory without a size cap. A single oversized request can exhaust process memory.
-Affected: `src/fscrawler/rest_server.py:265`.
-
 **REST-3 — Unvalidated `index` query parameter**
 The `index` query parameter on upload and delete endpoints is passed to
 OpenSearch without validation or allowlisting. A caller can write to or delete
-from any index, including system indices.
-Affected: `src/fscrawler/rest_server.py:129,155`.
+from any index, including system indices (`CWE-20`, `CWE-943`).
+Affected: `src/fscrawler/rest_server.py:170,223,238`.
 
 **CFG-1 — SSRF via `tika_url`**
 The `tika_url` setting (and its `FSCRAWLER_FS_TIKA_URL` env override) is
 accepted without URL validation. Every document's raw bytes are forwarded to
 this URL. An attacker who controls settings or environment can redirect uploads
-to arbitrary internal hosts.
-Affected: `src/fscrawler/settings.py:174`, `src/fscrawler/parser.py`.
+to arbitrary internal hosts (`CWE-918`).
+Affected: `src/fscrawler/settings.py:274`, `src/fscrawler/parser.py:344`.
 
 ---
 
@@ -49,25 +44,41 @@ Affected: `src/fscrawler/settings.py:174`, `src/fscrawler/parser.py`.
 
 ~~**SAST-1 — Ruff `S` (security) rules not enabled**~~ *(resolved)*
 
+~~**REST-2 — Unbounded request body (DoS / OOM)**~~ *(partially resolved —
+`rest.max_body_size` now enforced for Content-Length requests)*
+Residual: for chunked transfer-encoded requests the full body is read into
+memory (`await request.body()`) *before* the size check fires. The OOM damage
+is done before the 413 response is sent. Full mitigation requires streaming
+size enforcement or an upstream reverse proxy with body size limits.
+Affected: `src/fscrawler/rest_server.py:112-114`.
+
 **REST-4 — CORS wildcard, no configurable origin list**
 When `rest.enable_cors: true`, `allow_origins=["*"]` is hardcoded. There is no
-way to restrict CORS to a known set of origins.
-Affected: `src/fscrawler/rest_server.py:80-85`.
+way to restrict CORS to a known set of origins (`CWE-942`).
+Affected: `src/fscrawler/rest_server.py:94-99`.
 
 **REST-5 — Raw exception detail returned in HTTP 500 responses**
 Internal exception messages (which may contain file paths or system detail) are
-forwarded to the HTTP caller in `detail` fields.
-Affected: `src/fscrawler/rest_server.py:304`.
+forwarded to the HTTP caller in `detail` fields (`CWE-209`).
+Affected: `src/fscrawler/rest_server.py:346`.
 
 **REST-6 — `?debug=true` exposes full document content without authentication**
 Any unauthenticated caller can pass `?debug=true` to receive the complete
 extracted text and metadata of an uploaded file.
-Affected: `src/fscrawler/rest_server.py:315`.
+Affected: `src/fscrawler/rest_server.py:361`.
 
 **CFG-2 — `ssl_verification: false` default in `--setup` template**
 The generated `_settings.yaml` disables TLS certificate verification, leaving
-new deployments silently vulnerable to MITM on the OpenSearch connection.
-Affected: `src/fscrawler/cli.py:321`.
+new deployments silently vulnerable to MITM on the OpenSearch connection
+(`CWE-295`).
+Affected: `src/fscrawler/cli.py:490`.
+
+**WAL-1 — Unbounded WAL growth (disk exhaustion)**
+The WAL `append()` method writes records (including full document payloads)
+without any size limit or rotation. If OpenSearch is unreachable for an extended
+period during a large crawl, the WAL grows without bound and can exhaust disk
+space (`CWE-400`).
+Affected: `src/fscrawler/wal.py:36-44`.
 
 ---
 
@@ -76,6 +87,27 @@ Affected: `src/fscrawler/cli.py:321`.
 ~~**DOCKER-1 — Unpinned `:latest` image tags**~~ *(resolved — `python:3.12-slim` pinned to digest in `Dockerfile`)*
 
 ~~**CRYPTO-1 — MD5 used for document ID hashing**~~ *(resolved — replaced with SHA-256)*
+
+~~**CRAWL-1 — Symlink escape: `follow_symlinks=True` allowed traversal outside crawl root**~~ *(resolved — boundary check added via `resolve().is_relative_to()`)*
+
+~~**CRAWL-2 — Non-atomic checkpoint writes (corruption on crash)**~~ *(resolved — `save_checkpoint()` now uses temp + fsync + atomic rename, matching the WAL pattern)*
+
+~~**DOCKER-2 — Dev compose ports bound to `0.0.0.0`**~~ *(resolved — all port
+mappings now bind to `127.0.0.1`)*
+Network binding uses a two-layer model: the process inside the container binds
+`0.0.0.0` (required — `127.0.0.1` inside a container means only reachable from
+within the container itself, making the port mapping useless). The
+`docker-compose.yml` host-side mapping (e.g. `127.0.0.1:8080:8080`) controls
+what is reachable from outside — localhost only. This keeps services accessible
+from the developer's browser/curl but not from the wider network. See the
+header comment in `docker-compose.yml` and inline comments in `config/` YAML
+files for details.
+
+~~**CFG-4 — `--setup` template bound REST to `0.0.0.0`**~~ *(resolved — template
+now defaults to `127.0.0.1:8080`)*
+The `--setup` template is for native (non-Docker) use where `127.0.0.1` is the
+correct safe default. Docker deployments should use their own `_settings.yaml`
+with `0.0.0.0` and rely on docker-compose port mappings for access control.
 
 **CFG-3 — Default crawl path is `/tmp/es`**
 When `fs.url` is not set in `_settings.yaml`, the crawl root defaults to `/tmp/es`
@@ -87,7 +119,18 @@ Suppressed: `# noqa: S108` at `src/fscrawler/settings.py` (`FsSettings.from_dict
 The endpoint comment states "credentials redacted" but serialises the full
 `FsConfig` dataclass. If a credential field is ever added to `FsConfig` it will
 be silently exposed. An explicit allowlist of safe fields should be used.
-Affected: `src/fscrawler/rest_server.py:94-96`.
+Affected: `src/fscrawler/rest_server.py:137`.
+
+**CI-1 — No dependency vulnerability scan in CI pipeline**
+`pip-audit` runs only in `release.yml`, not in `ci.yml`. A vulnerable dependency
+can be merged to `main` and only caught at release time. The Trivy pre-push hook
+partially compensates but is optional (`CWE-1395`).
+
+**LOG-1 — Credentials in URLs logged at DEBUG level**
+If a user embeds credentials in an OpenSearch node URL (e.g.
+`https://user:pass@host:9200`), the raw URL is logged before parsing strips
+them. Only emitted at DEBUG level (`CWE-532`).
+Affected: `src/fscrawler/client.py:68`.
 
 ---
 
@@ -180,4 +223,3 @@ make security
 Please **do not** open a public GitHub issue for security vulnerabilities.
 
 Report vulnerabilities privately via [GitHub's private vulnerability reporting](https://github.com/P6rguVyrst/opensearch-fscrawler/security/advisories/new).
-

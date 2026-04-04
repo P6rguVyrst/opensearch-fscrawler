@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Metadata-only attributes:** `parse_metadata_only()` now populates file attributes (permissions, owner, group) when `attributes_support` is enabled, matching the full `parse()` path.
 - **Integration test cleanup:** Test indices are now deleted after integration tests complete.
 
+### Security
+- **Symlink escape prevention (CWE-59):** When `follow_symlinks: true`, symlinks resolving outside the crawl root are now rejected. Prevents indexing of sensitive files like `/etc/shadow` via crafted symlinks.
+- **Atomic checkpoint writes (CWE-669):** `save_checkpoint()` now uses temp file + fsync + atomic rename, matching the WAL pattern. Prevents checkpoint corruption on crash that could force a full re-crawl.
+- **`--setup` template bind address (CWE-668):** Generated `_settings.yaml` now defaults `rest.url` to `127.0.0.1:8080` instead of `0.0.0.0:8080`, preventing accidental network exposure of the unauthenticated REST API.
+- **Docker compose port binding (CWE-668):** All port mappings in `docker-compose.yml` now bind to `127.0.0.1` — services are accessible from the local machine but not from the wider network.
+
 ## [0.4.0] - 2026-04-04
 
 ### Added

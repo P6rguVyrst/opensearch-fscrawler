@@ -493,7 +493,7 @@ elasticsearch:
   byte_size: "10mb"
   push_templates: true
 rest:
-  url: "http://0.0.0.0:8080"
+  url: "http://127.0.0.1:8080"
   enable_cors: false
 """
     settings_file.write_text(template, encoding="utf-8")

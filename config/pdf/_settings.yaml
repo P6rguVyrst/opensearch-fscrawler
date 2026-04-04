@@ -23,5 +23,8 @@ elasticsearch:
   byte_size: "10mb"
   push_templates: true
 rest:
+  # 0.0.0.0 is correct here — this runs inside a container where it must accept
+  # connections on all interfaces for docker-compose port mapping to work.
+  # External exposure is limited by the 127.0.0.1 host binding in docker-compose.yml.
   url: "http://0.0.0.0:8081"
   enable_cors: false
