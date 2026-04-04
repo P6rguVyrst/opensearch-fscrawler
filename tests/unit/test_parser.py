@@ -617,3 +617,18 @@ class TestContentNormalization:
             parser = TikaParser(settings)
             doc = parser.parse(f)
             assert doc.content == tika_content
+
+    def test_normalization_in_parse_metadata_only_does_not_alter_none_content(
+        self, tmp_path: Path
+    ) -> None:
+        """parse_metadata_only returns content=None; normalization must not error."""
+        from fscrawler.parser import TikaParser
+
+        data = tmp_path / "data"
+        data.mkdir(parents=True)
+        f = data / "file.txt"
+        f.write_bytes(b"text")
+        settings = make_settings(url=str(data), content_normalize=True)
+        parser = TikaParser(settings)
+        doc = parser.parse_metadata_only(f)
+        assert doc.content is None
