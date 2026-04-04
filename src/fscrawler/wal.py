@@ -24,8 +24,9 @@ class WriteAheadLog:
     to remove processed records safely.
     """
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, job_name: str = "") -> None:
         self._path = path
+        self._job_name = job_name
         self._lock = threading.Lock()
 
     @property
@@ -40,7 +41,7 @@ class WriteAheadLog:
                 f.write(line)
                 f.flush()
                 os.fsync(f.fileno())
-            wal_records.add(1, {"fscrawler.wal.action": "append"})
+            wal_records.add(1, {"fscrawler.wal.action": "append", "fscrawler.job.name": self._job_name})
 
     def read(self) -> list[dict[str, Any]]:
         """Read all valid records from the WAL. Skips corrupt lines."""
@@ -94,7 +95,7 @@ class WriteAheadLog:
                     f.flush()
                     os.fsync(f.fileno())
                 os.replace(tmp_path, str(self._path))
-                wal_records.add(1, {"fscrawler.wal.action": "checkpoint"})
+                wal_records.add(1, {"fscrawler.wal.action": "checkpoint", "fscrawler.job.name": self._job_name})
             except Exception:
                 try:
                     os.unlink(tmp_path)

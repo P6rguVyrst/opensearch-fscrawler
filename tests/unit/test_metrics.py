@@ -4,6 +4,15 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import fscrawler.metrics as metrics_mod
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _reset_configure_guard() -> None:
+    """Reset the idempotency guard so each test can call configure_metrics()."""
+    metrics_mod._configured = False
+
 
 class TestConfigureMetrics:
     def test_configure_creates_meter_provider(self) -> None:
@@ -27,6 +36,15 @@ class TestConfigureMetrics:
         ) as mock_exporter_cls:
             configure_metrics(otel_endpoint=None)
             mock_exporter_cls.assert_not_called()
+
+    def test_configure_is_idempotent(self) -> None:
+        """Second call to configure_metrics() is a no-op."""
+        from fscrawler.metrics import configure_metrics
+        with patch("opentelemetry.sdk.metrics.MeterProvider") as mock_provider:
+            configure_metrics()
+            first_call_count = mock_provider.call_count
+            configure_metrics()
+            assert mock_provider.call_count == first_call_count
 
 
 class TestInstruments:

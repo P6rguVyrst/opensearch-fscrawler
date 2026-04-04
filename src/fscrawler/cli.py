@@ -250,7 +250,7 @@ def _run_rest(settings_file: Path, job_dir: Path, *, otel_endpoint: str | None =
 
     _ensure_dlq_indices(client)
 
-    wal = WriteAheadLog(job_dir / ".wal")
+    wal = WriteAheadLog(job_dir / ".wal", job_name=settings.name)
     _recover_wal(client, wal)
 
     stop_event = threading.Event()
@@ -390,13 +390,16 @@ def _run(job_name: str, settings_file: Path, job_dir: Path, loop: bool) -> None:
 
     _ensure_dlq_indices(client)
 
-    wal = WriteAheadLog(job_dir / ".wal")
+    wal = WriteAheadLog(job_dir / ".wal", job_name=settings.name)
     _recover_wal(client, wal)
 
     parser = TikaParser(settings, tika_url=settings.fs.tika_url)
 
     # Always do an initial full scan
     _crawl_once(settings, client, parser, job_dir, wal=wal)
+
+    if not loop:
+        logger.info("Single-run mode — DLQ retry thread not started. Use --loop or --rest for automatic retries.")
 
     if loop:
         stop_event = threading.Event()

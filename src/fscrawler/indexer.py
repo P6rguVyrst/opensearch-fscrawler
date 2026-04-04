@@ -92,14 +92,6 @@ class BulkIndexer:
                 "payload": doc_body,
             })
 
-        self._pending[doc_id] = {
-            "job_name": self._settings.name,
-            "target_index": self._index,
-            "action": "index",
-            "payload": doc_body,
-            "source_path": doc.path.real,
-        }
-
         # History: check for existing doc and archive if content changed
         if self._keep_history:
             self._archive_if_changed(doc_id, doc.file.checksum)
@@ -110,6 +102,13 @@ class BulkIndexer:
         estimated = len(json.dumps(doc_body, default=str).encode("utf-8"))
 
         with self._lock:
+            self._pending[doc_id] = {
+                "job_name": self._settings.name,
+                "target_index": self._index,
+                "action": "index",
+                "payload": doc_body,
+                "source_path": doc.path.real,
+            }
             self._buffer.append(action)
             self._buffer.append(doc_body)
             self._buffer_bytes += estimated
@@ -150,14 +149,6 @@ class BulkIndexer:
                 "action": "delete",
             })
 
-        self._pending[doc_id] = {
-            "job_name": self._settings.name,
-            "target_index": self._index,
-            "action": "delete",
-            "payload": None,
-            "source_path": virtual_path,
-        }
-
         # History: archive the deleted document
         if self._keep_history:
             self._archive_if_changed(doc_id, "deleted")
@@ -165,6 +156,13 @@ class BulkIndexer:
         action: dict[str, Any] = {"delete": {"_index": self._index, "_id": doc_id}}
 
         with self._lock:
+            self._pending[doc_id] = {
+                "job_name": self._settings.name,
+                "target_index": self._index,
+                "action": "delete",
+                "payload": None,
+                "source_path": virtual_path,
+            }
             self._buffer.append(action)
             # Check whether we've hit bulk_size (delete counts as one operation)
             if len(self._buffer) >= self._bulk_size:

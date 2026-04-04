@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Design specs for DLQ/WAL and OTel metrics in `docs/specs/`
 
 ### Fixed
-- Watcher `_index()` no longer raises `UnboundLocalError` when `doc.to_dict()` fails ��� `doc_body` initialized before try block
+- Watcher `_index()` no longer raises `UnboundLocalError` when `doc.to_dict()` fails — `doc_body` initialized before try block
 - Watcher `_delete()` now writes to DLQ on failure instead of silently logging
 - Watcher `_delete()` no longer risks `UnboundLocalError` — `doc_id` initialized before try block with fallback from filename
 - Watcher `_delete()` now emits `fscrawler.documents.processed` metric on both success and error paths (previously invisible to SLI)
@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `bulk_duration` histogram now uses explicit bucket boundaries from OTel database conventions instead of SDK defaults
 - Prometheus `/metrics` endpoint uses native ASGI app (`make_asgi_app()`) instead of WSGI app with middleware wrapper — eliminates starlette 1.0 breakage where `starlette.middleware.wsgi` was removed
 - DLQ retry backoff exponent off-by-one corrected — first retry delay is now 60s (not 120s)
+- `BulkIndexer._pending` dict writes moved inside `self._lock` — prevents data race on free-threaded Python (PEP 703)
+- `configure_metrics()` is now idempotent — subsequent calls are no-ops instead of raising on duplicate `set_meter_provider()`
 
 ### Changed
 - **Breaking:** `--log-otel-endpoint` / `FSCRAWLER_LOG_OTEL_ENDPOINT` removed (unreleased in 0.3.0). Use `--otel-endpoint` / `FSCRAWLER_OTEL_ENDPOINT` instead.

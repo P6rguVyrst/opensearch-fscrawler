@@ -783,3 +783,112 @@ class TestIndexerMetrics:
             indexer = BulkIndexer(client, settings)
             indexer.add(make_document("/data/test.txt"))
             mock_pfq.add.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _pending thread safety
+# ---------------------------------------------------------------------------
+
+
+class TestPendingThreadSafety:
+    """Verify _pending dict is written under the lock to prevent data races."""
+
+    def test_add_populates_pending_under_lock(self, mock_opensearch_client: MagicMock) -> None:
+        """_pending[doc_id] must be set inside the lock, not outside it."""
+        import threading
+
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 100})
+        client = FsCrawlerClient(settings)
+        indexer = BulkIndexer(client, settings)
+
+        # Track whether _pending is written while lock is held
+        pending_written_under_lock = []
+        original_lock = indexer._lock
+
+        class TrackingLock:
+            """Wraps the real lock and records whether _pending was mutated inside it."""
+
+            def __init__(self) -> None:
+                self._held = False
+
+            def __enter__(self) -> "TrackingLock":
+                original_lock.acquire()
+                self._held = True
+                return self
+
+            def __exit__(self, *args: Any) -> None:
+                self._held = False
+                original_lock.release()
+
+            @property
+            def held(self) -> bool:
+                return self._held
+
+        tracking = TrackingLock()
+        indexer._lock = tracking  # type: ignore[assignment]
+
+        # Monkey-patch _pending __setitem__ to check if lock is held
+        original_pending = indexer._pending
+
+        class TrackingDict(dict):  # type: ignore[type-arg]
+            def __setitem__(self, key: Any, value: Any) -> None:
+                pending_written_under_lock.append(tracking.held)
+                super().__setitem__(key, value)
+
+        indexer._pending = TrackingDict(original_pending)  # type: ignore[assignment]
+
+        indexer.add(make_document("/data/test.txt"))
+
+        assert len(pending_written_under_lock) == 1
+        assert pending_written_under_lock[0] is True, \
+            "_pending must be written while the lock is held"
+
+    def test_delete_populates_pending_under_lock(self, mock_opensearch_client: MagicMock) -> None:
+        """_pending[doc_id] in delete() must be set inside the lock."""
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.indexer import BulkIndexer
+
+        settings = make_settings(elasticsearch={"bulk_size": 100})
+        client = FsCrawlerClient(settings)
+        indexer = BulkIndexer(client, settings)
+
+        pending_written_under_lock = []
+        original_lock = indexer._lock
+
+        class TrackingLock:
+            def __init__(self) -> None:
+                self._held = False
+
+            def __enter__(self) -> "TrackingLock":
+                original_lock.acquire()
+                self._held = True
+                return self
+
+            def __exit__(self, *args: Any) -> None:
+                self._held = False
+                original_lock.release()
+
+            @property
+            def held(self) -> bool:
+                return self._held
+
+        tracking = TrackingLock()
+        indexer._lock = tracking  # type: ignore[assignment]
+
+        original_pending = indexer._pending
+
+        class TrackingDict(dict):  # type: ignore[type-arg]
+            def __setitem__(self, key: Any, value: Any) -> None:
+                pending_written_under_lock.append(tracking.held)
+                super().__setitem__(key, value)
+
+        indexer._pending = TrackingDict(original_pending)  # type: ignore[assignment]
+
+        indexer.delete("/gone.txt")
+
+        assert len(pending_written_under_lock) == 1
+        assert pending_written_under_lock[0] is True, \
+            "_pending must be written while the lock is held"

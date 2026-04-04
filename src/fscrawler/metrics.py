@@ -85,6 +85,9 @@ def get_prometheus_app() -> Any:
 # ---------------------------------------------------------------------------
 
 
+_configured: bool = False
+
+
 def configure_metrics(
     *,
     otel_endpoint: str | None = None,
@@ -92,15 +95,22 @@ def configure_metrics(
 ) -> None:
     """Attach metric readers/exporters to the global MeterProvider.
 
+    Safe to call multiple times — subsequent calls are no-ops.
+
     Parameters
     ----------
     otel_endpoint:
         OTLP/HTTP base URL. Metrics pushed to ``{url}/v1/metrics``.
     enable_prometheus:
         If True, create a PrometheusMetricReader so ``get_prometheus_app()``
-        returns a WSGI app for the ``/metrics`` route.
+        returns an ASGI app for the ``/metrics`` route.
     """
-    global _prometheus_app
+    global _prometheus_app, _configured
+
+    if _configured:
+        logger.debug("configure_metrics() already called — skipping")
+        return
+    _configured = True
 
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
