@@ -1,0 +1,22 @@
+{
+  "template": {
+    "mappings": {
+      "properties": {
+        "job_name":      { "type": "keyword" },
+        "target_index":  { "type": "keyword" },
+        "doc_id":        { "type": "keyword" },
+        "action":        { "type": "keyword" },
+        "payload":       { "type": "object", "enabled": false },
+        "pipeline":      { "type": "keyword" },
+        "error_message": { "type": "text" },
+        "error_type":    { "type": "keyword" },
+        "first_failed":  { "type": "date", "format": "date_optional_time" },
+        "last_retried":  { "type": "date", "format": "date_optional_time" },
+        "retry_count":   { "type": "integer" },
+        "source_path":   { "type": "keyword" },
+        "promoted_at":   { "type": "date", "format": "date_optional_time" },
+        "final_error":   { "type": "text" }
+      }
+    }
+  }
+}

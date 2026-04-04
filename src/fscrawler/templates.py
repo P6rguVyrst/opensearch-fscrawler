@@ -38,12 +38,16 @@ SHARED_COMPONENTS = [
     "mapping_attachment",
     "mapping_attributes",
     "mapping_history",
+    "mapping_dlq",
+    "mapping_pfq",
 ]
 
 INDEX_TEMPLATES = [
     "index_template_docs",
     "index_template_folders",
     "index_template_history",
+    "index_template_dlq",
+    "index_template_pfq",
 ]
 
 

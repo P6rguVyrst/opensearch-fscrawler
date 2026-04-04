@@ -110,6 +110,17 @@ class FsConfig:
 
 
 @dataclass
+class DLQConfig:
+    """Configuration for the Dead Letter Queue retry system."""
+
+    max_retries: int = 5
+    retry_interval: int = 60  # seconds
+    backoff_multiplier: float = 2.0
+    max_backoff: int = 3600  # seconds
+    check_interval: int = 300  # seconds
+
+
+@dataclass
 class ElasticsearchSettings:
     """Configuration for the Elasticsearch / OpenSearch target."""
 
@@ -124,6 +135,7 @@ class ElasticsearchSettings:
     bulk_size: int = 100
     byte_size: int = 10 * 1024 * 1024  # 10mb
     push_templates: bool = True
+    dlq: DLQConfig = field(default_factory=DLQConfig)
 
     def __post_init__(self) -> None:
         if self.api_key and (self.username or self.password):
@@ -150,8 +162,11 @@ def _apply_env_to_raw(raw: dict[str, Any], env: dict[str, str]) -> None:
 
     def _setdefault_nested(d: dict[str, Any], section: str, key: str, value: Any) -> None:
         sec = d.setdefault(section, {})
-        if key not in sec:
-            sec[key] = value
+        parts = key.split(".")
+        for part in parts[:-1]:
+            sec = sec.setdefault(part, {})
+        if parts[-1] not in sec:
+            sec[parts[-1]] = value
 
     if v := env.get("FSCRAWLER_ELASTICSEARCH_URLS"):
         urls = [u.strip() for u in v.split(",") if u.strip()]
@@ -169,6 +184,11 @@ def _apply_env_to_raw(raw: dict[str, Any], env: dict[str, str]) -> None:
         ("FSCRAWLER_ELASTICSEARCH_BULK_SIZE", "elasticsearch", "bulk_size"),
 
         ("FSCRAWLER_ELASTICSEARCH_BYTE_SIZE", "elasticsearch", "byte_size"),
+        ("FSCRAWLER_ELASTICSEARCH_DLQ_MAX_RETRIES", "elasticsearch", "dlq.max_retries"),
+        ("FSCRAWLER_ELASTICSEARCH_DLQ_RETRY_INTERVAL", "elasticsearch", "dlq.retry_interval"),
+        ("FSCRAWLER_ELASTICSEARCH_DLQ_BACKOFF_MULTIPLIER", "elasticsearch", "dlq.backoff_multiplier"),
+        ("FSCRAWLER_ELASTICSEARCH_DLQ_MAX_BACKOFF", "elasticsearch", "dlq.max_backoff"),
+        ("FSCRAWLER_ELASTICSEARCH_DLQ_CHECK_INTERVAL", "elasticsearch", "dlq.check_interval"),
         ("FSCRAWLER_REST_URL", "rest", "url"),
         ("FSCRAWLER_FS_URL", "fs", "url"),
         ("FSCRAWLER_FS_TIKA_URL", "fs", "tika_url"),
@@ -287,6 +307,21 @@ class FsSettings:
             es.byte_size = parse_byte_size(str(es_data["byte_size"]))
         if "push_templates" in es_data:
             es.push_templates = bool(es_data["push_templates"])
+
+        # --- dlq ---
+        dlq_data: dict[str, Any] = es_data.get("dlq") or {}
+        dlq = DLQConfig()
+        if "max_retries" in dlq_data:
+            dlq.max_retries = int(dlq_data["max_retries"])
+        if "retry_interval" in dlq_data:
+            dlq.retry_interval = int(dlq_data["retry_interval"])
+        if "backoff_multiplier" in dlq_data:
+            dlq.backoff_multiplier = float(dlq_data["backoff_multiplier"])
+        if "max_backoff" in dlq_data:
+            dlq.max_backoff = int(dlq_data["max_backoff"])
+        if "check_interval" in dlq_data:
+            dlq.check_interval = int(dlq_data["check_interval"])
+        es.dlq = dlq
 
         # Apply defaults that depend on job name
         if not es.index:

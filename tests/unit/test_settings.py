@@ -367,3 +367,49 @@ class TestElasticsearchSettings:
         with caplog.at_level(logging.WARNING, logger="fscrawler"):
             ElasticsearchSettings(username="user", password="pass", api_key="key")
         assert any("api_key" in r.message or "username" in r.message for r in caplog.records)
+
+
+class TestDLQSettings:
+    def test_dlq_defaults(self) -> None:
+        data = {"name": "myjob", "fs": {"url": "/data"}}
+        settings = FsSettings.from_dict(data)
+        dlq = settings.elasticsearch.dlq
+        assert dlq.max_retries == 5
+        assert dlq.retry_interval == 60
+        assert dlq.backoff_multiplier == 2.0
+        assert dlq.max_backoff == 3600
+        assert dlq.check_interval == 300
+
+    def test_dlq_custom_values(self) -> None:
+        data = {
+            "name": "myjob",
+            "fs": {"url": "/data"},
+            "elasticsearch": {
+                "dlq": {
+                    "max_retries": 10,
+                    "retry_interval": 30,
+                    "backoff_multiplier": 3.0,
+                    "max_backoff": 7200,
+                    "check_interval": 600,
+                }
+            },
+        }
+        settings = FsSettings.from_dict(data)
+        dlq = settings.elasticsearch.dlq
+        assert dlq.max_retries == 10
+        assert dlq.retry_interval == 30
+        assert dlq.backoff_multiplier == 3.0
+        assert dlq.max_backoff == 7200
+        assert dlq.check_interval == 600
+
+    def test_dlq_env_var_max_retries(self, tmp_path: Path) -> None:
+        f = tmp_path / "_settings.yaml"
+        f.write_text("name: myjob\nfs:\n  url: /data\n")
+        s = FsSettings.from_file(f, environ={"FSCRAWLER_ELASTICSEARCH_DLQ_MAX_RETRIES": "20"})
+        assert s.elasticsearch.dlq.max_retries == 20
+
+    def test_dlq_env_var_check_interval(self, tmp_path: Path) -> None:
+        f = tmp_path / "_settings.yaml"
+        f.write_text("name: myjob\nfs:\n  url: /data\n")
+        s = FsSettings.from_file(f, environ={"FSCRAWLER_ELASTICSEARCH_DLQ_CHECK_INTERVAL": "120"})
+        assert s.elasticsearch.dlq.check_interval == 120

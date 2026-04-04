@@ -1,0 +1,8 @@
+{
+  "index_patterns": ["fscrawler_dlq"],
+  "priority": 500,
+  "composed_of": [
+    "fscrawler_settings_total_fields",
+    "fscrawler_mapping_dlq"
+  ]
+}
