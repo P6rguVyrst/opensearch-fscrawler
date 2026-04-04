@@ -633,6 +633,34 @@ class TestCliRestFlag:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# GET /metrics – Prometheus metrics endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestMetricsEndpoint:
+    def test_metrics_endpoint_returns_200(self) -> None:
+        from fscrawler.metrics import configure_metrics
+        from fscrawler.rest_server import CrawlerState, create_app
+
+        configure_metrics(enable_prometheus=True)
+
+        settings = make_settings()
+        client = make_mock_client()
+        state = CrawlerState()
+        parser = make_mock_parser()
+        app = create_app(settings=settings, client=client, crawler_state=state, parser=parser)
+        test_client = TestClient(app)
+
+        response = test_client.get("/metrics")
+        assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Background crawler loop behaviour
+# ---------------------------------------------------------------------------
+
+
 class TestCrawlerLoop:
     """Test _crawler_loop: initial scan + watchdog observer lifecycle."""
 

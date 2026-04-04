@@ -119,7 +119,7 @@ def main(
 
     from fscrawler.metrics import configure_metrics
 
-    configure_metrics(otel_endpoint=otel_endpoint)
+    configure_metrics(otel_endpoint=otel_endpoint, enable_prometheus=rest)
 
     if config_dir is None:
         config_dir = Path.home() / ".fscrawler"
