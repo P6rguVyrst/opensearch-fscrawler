@@ -7,6 +7,7 @@ import fnmatch
 import json
 import logging
 import os
+import stat as stat_module
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -38,6 +39,8 @@ class LocalCrawler:
         self._previous_checkpoint: dict[str, float] = self._load_checkpoint()
         # Built during the current scan
         self._current_checkpoint: dict[str, float] = {}
+        # Track visited (dev, inode) pairs to detect symlink cycles
+        self._visited: set[tuple[int, int]] = set()
 
     # ------------------------------------------------------------------
     # Public API
@@ -46,6 +49,12 @@ class LocalCrawler:
     def scan(self) -> Iterator[Path]:
         """Yield Path objects for every eligible file under fs.url."""
         self._current_checkpoint = {}
+        self._visited = set()
+        try:
+            root_stat = self._root.stat()
+            self._visited.add((root_stat.st_dev, root_stat.st_ino))
+        except OSError:
+            pass
         fs = self._settings.fs
 
         for entry in self._walk(self._root):
@@ -106,6 +115,12 @@ class LocalCrawler:
         """Yield all directories under fs.url (including the root itself)."""
         if not self._settings.fs.index_folders:
             return
+        self._visited = set()
+        try:
+            root_stat = self._root.stat()
+            self._visited.add((root_stat.st_dev, root_stat.st_ino))
+        except OSError:
+            pass
         yield self._root
         yield from self._walk_dirs(self._root)
 
@@ -148,6 +163,15 @@ class LocalCrawler:
             if entry.is_symlink() and not fs.follow_symlinks:
                 continue
             if entry.is_dir(follow_symlinks=fs.follow_symlinks):
+                try:
+                    dir_stat = entry.stat(follow_symlinks=True)
+                    dir_key = (dir_stat.st_dev, dir_stat.st_ino)
+                except OSError:
+                    continue
+                if dir_key in self._visited:
+                    logger.warning("Symlink cycle detected, skipping: %s", entry.path)
+                    continue
+                self._visited.add(dir_key)
                 child = Path(entry.path)
                 if (child / _IGNORE_SENTINEL).exists():
                     logger.debug("Skipping %s — .fscrawlerignore found", child)
@@ -176,6 +200,15 @@ class LocalCrawler:
                 continue
 
             if entry.is_dir(follow_symlinks=fs.follow_symlinks):
+                try:
+                    dir_stat = entry.stat(follow_symlinks=True)
+                    dir_key = (dir_stat.st_dev, dir_stat.st_ino)
+                except OSError:
+                    continue
+                if dir_key in self._visited:
+                    logger.warning("Symlink cycle detected, skipping: %s", entry.path)
+                    continue
+                self._visited.add(dir_key)
                 yield from self._walk(Path(entry.path))
             elif entry.is_file(follow_symlinks=fs.follow_symlinks):
                 name = entry.name
