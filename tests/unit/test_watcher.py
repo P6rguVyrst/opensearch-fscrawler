@@ -281,3 +281,31 @@ class TestFsEventHandlerWalDlq:
 
         handler._delete("/data/test.txt")
         client.delete.assert_called_once()
+
+    def test_index_to_dict_failure_writes_dlq_with_none_payload(self) -> None:
+        """If doc.to_dict() raises, DLQ record should have payload=None (not UnboundLocalError)."""
+        mock_wal = MagicMock()
+        handler, client, parser, mock_doc = self._make_handler(wal=mock_wal)
+        mock_doc.to_dict.side_effect = RuntimeError("serialization failed")
+
+        handler._index(Path("/data/test.txt"))
+
+        client.index_raw.assert_called_once()
+        call_kwargs = client.index_raw.call_args[1]
+        assert call_kwargs["index"] == "fscrawler_dlq"
+        assert call_kwargs["body"]["payload"] is None
+
+    def test_delete_failure_writes_to_dlq(self) -> None:
+        """Failed deletes should be written to DLQ for retry."""
+        mock_wal = MagicMock()
+        handler, client, parser, mock_doc = self._make_handler(wal=mock_wal)
+        client.delete.side_effect = RuntimeError("connection lost")
+
+        handler._delete("/data/test.txt")
+
+        client.index_raw.assert_called_once()
+        call_kwargs = client.index_raw.call_args[1]
+        assert call_kwargs["index"] == "fscrawler_dlq"
+        body = call_kwargs["body"]
+        assert body["action"] == "delete"
+        assert body["error_type"] == "RuntimeError"

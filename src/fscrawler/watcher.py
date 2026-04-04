@@ -94,6 +94,7 @@ class FsEventHandler(FileSystemEventHandler):
             return
         doc = None
         doc_id = None
+        doc_body = None
         target_index = self._settings.elasticsearch.index
         job_name = self._settings.name
         try:
@@ -131,7 +132,7 @@ class FsEventHandler(FileSystemEventHandler):
                     target_index=target_index,
                     doc_id=doc_id,
                     action="index",
-                    payload=doc_body if doc is not None else None,
+                    payload=doc_body,
                     error_type=type(exc).__name__,
                     error_message=str(exc),
                     source_path=str(path),
@@ -176,3 +177,23 @@ class FsEventHandler(FileSystemEventHandler):
 
         except Exception as exc:
             logger.error("Failed to delete %s from index: %s", path, exc, exc_info=True)
+            try:
+                dlq_record = build_dlq_record(
+                    job_name=self._settings.name,
+                    target_index=self._settings.elasticsearch.index,
+                    doc_id=doc_id,
+                    action="delete",
+                    payload=None,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    source_path=path,
+                )
+                dlq_doc_id = make_dlq_doc_id(self._settings.name, doc_id)
+                self._client.index_raw(
+                    index=DLQ_INDEX,
+                    doc_id=dlq_doc_id,
+                    body=dlq_record,
+                )
+                logger.info("Wrote failed delete %s to DLQ", doc_id)
+            except Exception as dlq_exc:
+                logger.error("Failed to write to DLQ for delete %s: %s", path, dlq_exc)
