@@ -226,3 +226,13 @@ class FsCrawlerClient:
         """Delete a document by ID, defaulting the index from settings."""
         idx = index or self._settings.elasticsearch.index
         return self.delete_document(index=idx, doc_id=doc_id)
+
+    def search(self, index: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Execute a search query against the given index."""
+        return self._client.search(index=index, body=body)  # type: ignore[no-any-return]
+
+    def index_raw(
+        self, index: str, doc_id: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Index a raw dict document (not a Document dataclass)."""
+        return self._client.index(index=index, id=doc_id, body=body)  # type: ignore[no-any-return]

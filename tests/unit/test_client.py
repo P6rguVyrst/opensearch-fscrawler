@@ -402,3 +402,37 @@ class TestTemplateExistsErrorHandling:
         )
         with pytest.raises(AuthenticationException):
             client.push_templates()
+
+
+# ---------------------------------------------------------------------------
+# search and index_raw
+# ---------------------------------------------------------------------------
+
+
+class TestClientSearch:
+    def test_search_delegates_to_opensearch(self, mock_opensearch_client: MagicMock) -> None:
+        from fscrawler.client import FsCrawlerClient
+
+        mock_opensearch_client.search.return_value = {
+            "hits": {"total": {"value": 1}, "hits": [{"_id": "1", "_source": {"job_name": "test"}}]}
+        }
+        settings = make_settings()
+        client = FsCrawlerClient(settings)
+        result = client.search(index="fscrawler_dlq", body={"query": {"match_all": {}}})
+        mock_opensearch_client.search.assert_called_once_with(
+            index="fscrawler_dlq", body={"query": {"match_all": {}}}
+        )
+        assert result["hits"]["total"]["value"] == 1
+
+    def test_index_raw_delegates_to_opensearch(self, mock_opensearch_client: MagicMock) -> None:
+        from fscrawler.client import FsCrawlerClient
+
+        mock_opensearch_client.index.return_value = {"result": "created"}
+        settings = make_settings()
+        client = FsCrawlerClient(settings)
+        result = client.index_raw(
+            index="fscrawler_dlq", doc_id="myjob:abc", body={"job_name": "myjob"}
+        )
+        mock_opensearch_client.index.assert_called_once_with(
+            index="fscrawler_dlq", id="myjob:abc", body={"job_name": "myjob"}
+        )
