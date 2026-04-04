@@ -395,3 +395,42 @@ class TestWatcherMetrics:
                 if c[0][1].get("status") == "error"
             ]
             assert len(error_calls) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Full-path pattern matching in watcher (Task 1)
+# ---------------------------------------------------------------------------
+
+
+class TestWatcherFullPathFilters:
+    """Patterns containing '/' must match against the virtual path in the watcher."""
+
+    def test_exclude_with_slash_skips_matching_path(self) -> None:
+        settings = make_settings(fs={"url": "/data", "excludes": ["logs/*"]})
+        handler, client, _ = make_handler(settings=settings)
+        handler.on_created(_file_event(None, "/data/logs/debug.log"))
+        client.index.assert_not_called()
+
+    def test_exclude_with_slash_allows_non_matching_path(self) -> None:
+        settings = make_settings(fs={"url": "/data", "excludes": ["logs/*"]})
+        handler, client, _ = make_handler(settings=settings)
+        handler.on_created(_file_event(None, "/data/keep/debug.log"))
+        client.index.assert_called_once()
+
+    def test_include_with_slash_matches_virtual_path(self) -> None:
+        settings = make_settings(fs={"url": "/data", "includes": ["docs/*.pdf"]})
+        handler, client, _ = make_handler(settings=settings)
+        handler.on_created(_file_event(None, "/data/docs/report.pdf"))
+        client.index.assert_called_once()
+
+    def test_include_with_slash_blocks_non_matching_path(self) -> None:
+        settings = make_settings(fs={"url": "/data", "includes": ["docs/*.pdf"]})
+        handler, client, _ = make_handler(settings=settings)
+        handler.on_created(_file_event(None, "/data/other/report.pdf"))
+        client.index.assert_not_called()
+
+    def test_on_modified_respects_path_patterns(self) -> None:
+        settings = make_settings(fs={"url": "/data", "excludes": ["logs/*"]})
+        handler, client, _ = make_handler(settings=settings)
+        handler.on_modified(_file_event(None, "/data/logs/debug.log"))
+        client.index.assert_not_called()

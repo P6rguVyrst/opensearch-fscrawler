@@ -53,6 +53,7 @@ class FsEventHandler(FileSystemEventHandler):
         self._parser = parser
         self._crawler_state = crawler_state
         self._wal = wal
+        self._root = Path(settings.fs.url)
 
     # ------------------------------------------------------------------
     # watchdog callbacks
@@ -61,16 +62,18 @@ class FsEventHandler(FileSystemEventHandler):
     def on_created(self, event: Any) -> None:
         if event.is_directory or self._crawler_state.paused:
             return
-        if not self._matches(Path(event.src_path).name):
+        p = Path(event.src_path)
+        if not self._matches(p.name, self._virtual_path(p)):
             return
-        self._index(Path(event.src_path))
+        self._index(p)
 
     def on_modified(self, event: Any) -> None:
         if event.is_directory or self._crawler_state.paused:
             return
-        if not self._matches(Path(event.src_path).name):
+        p = Path(event.src_path)
+        if not self._matches(p.name, self._virtual_path(p)):
             return
-        self._index(Path(event.src_path))
+        self._index(p)
 
     def on_deleted(self, event: Any) -> None:
         if event.is_directory or self._crawler_state.paused:
@@ -83,12 +86,30 @@ class FsEventHandler(FileSystemEventHandler):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _matches(self, name: str) -> bool:
+    def _virtual_path(self, path: Path) -> str:
+        """Compute the virtual path relative to the crawl root."""
+        try:
+            return "/" + path.relative_to(self._root).as_posix()
+        except ValueError:
+            return "/" + path.name
+
+    @staticmethod
+    def _matches_pattern(name: str, virtual_path: str, pattern: str) -> bool:
+        """Match pattern against virtual path (if '/' in pattern) or filename."""
+        if "/" in pattern:
+            return fnmatch.fnmatch(virtual_path.lstrip("/"), pattern)
+        return fnmatch.fnmatch(name, pattern)
+
+    def _matches(self, name: str, virtual_path: str = "") -> bool:
         """Return True if name passes the includes/excludes filters."""
         fs = self._settings.fs
-        if fs.includes and not any(fnmatch.fnmatch(name, p) for p in fs.includes):
+        if fs.includes and not any(
+            self._matches_pattern(name, virtual_path, p) for p in fs.includes
+        ):
             return False
-        return not any(fnmatch.fnmatch(name, p) for p in fs.excludes)
+        return not any(
+            self._matches_pattern(name, virtual_path, p) for p in fs.excludes
+        )
 
     def _index(self, path: Path) -> None:
         if path.is_dir():

@@ -17,6 +17,13 @@ logger = logging.getLogger("fscrawler.crawler")
 _CHECKPOINT_FILENAME = ".fscrawler_checkpoint.json"
 
 
+def _matches_pattern(name: str, virtual_path: str, pattern: str) -> bool:
+    """Match *pattern* against virtual path (if pattern contains '/') or filename."""
+    if "/" in pattern:
+        return fnmatch.fnmatch(virtual_path.lstrip("/"), pattern)
+    return fnmatch.fnmatch(name, pattern)
+
+
 class LocalCrawler:
     """Walk a local directory tree and detect new, modified, and deleted files."""
 
@@ -161,15 +168,16 @@ class LocalCrawler:
                 yield from self._walk(Path(entry.path))
             elif entry.is_file(follow_symlinks=fs.follow_symlinks):
                 name = entry.name
+                virtual_path = "/" + Path(entry.path).relative_to(self._root).as_posix()
 
                 # includes: if set, file must match at least one pattern
                 if fs.includes and not any(
-                    fnmatch.fnmatch(name, pat) for pat in fs.includes
+                    _matches_pattern(name, virtual_path, pat) for pat in fs.includes
                 ):
                     continue
 
                 # excludes: file must not match any pattern
-                if any(fnmatch.fnmatch(name, pat) for pat in fs.excludes):
+                if any(_matches_pattern(name, virtual_path, pat) for pat in fs.excludes):
                     continue
 
                 yield entry.path

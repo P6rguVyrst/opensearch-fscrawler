@@ -363,3 +363,121 @@ class TestScanFolders:
         crawler = LocalCrawler(settings, config_dir=tmp_path)
         for folder in crawler.scan_folders():
             assert folder.is_dir()
+
+
+# ---------------------------------------------------------------------------
+# Full-path pattern matching (Task 1)
+# ---------------------------------------------------------------------------
+
+
+class TestCrawlerFullPathFilters:
+    """Patterns containing '/' must match against the virtual path, not just filename."""
+
+    def test_include_with_slash_matches_virtual_path(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        docs = data / "docs"
+        other = data / "other"
+        docs.mkdir(parents=True)
+        other.mkdir(parents=True)
+        (docs / "report.pdf").write_bytes(b"pdf")
+        (other / "report.pdf").write_bytes(b"pdf")
+
+        settings = make_settings(tmp_path, includes=["docs/*.pdf"])
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = sorted(f.name for f in crawler.scan())
+        # Only the one under docs/ should match
+        assert found == ["report.pdf"]
+        # Verify it's the docs one by checking the full path
+        found_paths = [str(f) for f in LocalCrawler(settings, config_dir=tmp_path).scan()]
+        assert any("docs" in p for p in found_paths)
+        assert not any("other" in p for p in found_paths)
+
+    def test_exclude_with_slash_matches_virtual_path(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        logs = data / "logs"
+        keep = data / "keep"
+        logs.mkdir(parents=True)
+        keep.mkdir(parents=True)
+        (logs / "debug.log").write_bytes(b"log")
+        (keep / "debug.log").write_bytes(b"log")
+
+        settings = make_settings(tmp_path, excludes=["logs/*"])
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found_paths = [str(f) for f in crawler.scan()]
+        assert any("keep" in p for p in found_paths)
+        assert not any(str(logs) in p for p in found_paths)
+
+    def test_pattern_without_slash_matches_filename_only(self, tmp_path: Path) -> None:
+        """Backwards compat: patterns without '/' match filename only."""
+        data = tmp_path / "data"
+        sub = data / "sub"
+        data.mkdir()
+        sub.mkdir()
+        (data / "file.pdf").write_bytes(b"pdf")
+        (sub / "file.pdf").write_bytes(b"pdf")
+
+        settings = make_settings(tmp_path, includes=["*.pdf"])
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = list(crawler.scan())
+        assert len(found) == 2
+
+    def test_glob_doublestar_matches_any_depth(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        deep = data / "a" / "b" / "c"
+        deep.mkdir(parents=True)
+        (deep / "report.pdf").write_bytes(b"pdf")
+        (data / "top.txt").write_bytes(b"txt")
+
+        settings = make_settings(tmp_path, includes=["**/*.pdf"])
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = [f.name for f in crawler.scan()]
+        assert "report.pdf" in found
+        assert "top.txt" not in found
+
+
+# ---------------------------------------------------------------------------
+# Default excludes (Task 2)
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultExcludes:
+    """Default excludes should filter tilde-prefixed temp files."""
+
+    def test_tilde_files_excluded_by_default(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        data.mkdir()
+        (data / "report.pdf").write_bytes(b"pdf")
+        (data / "~$report.pdf").write_bytes(b"tmp")
+
+        settings = make_settings(tmp_path)
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = [f.name for f in crawler.scan()]
+        assert "report.pdf" in found
+        assert "~$report.pdf" not in found
+
+    def test_explicit_excludes_override_default(self, tmp_path: Path) -> None:
+        data = tmp_path / "data"
+        data.mkdir()
+        (data / "report.pdf").write_bytes(b"pdf")
+        (data / "~$report.pdf").write_bytes(b"tmp")
+        (data / "notes.txt").write_bytes(b"txt")
+
+        # Explicit excludes replaces default — tilde file should be found
+        settings = make_settings(tmp_path, excludes=["*.txt"])
+        from fscrawler.crawler import LocalCrawler
+
+        crawler = LocalCrawler(settings, config_dir=tmp_path)
+        found = [f.name for f in crawler.scan()]
+        assert "report.pdf" in found
+        assert "~$report.pdf" in found
+        assert "notes.txt" not in found
