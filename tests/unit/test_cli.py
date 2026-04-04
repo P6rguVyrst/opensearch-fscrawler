@@ -506,6 +506,68 @@ class TestObserverRestart:
         # are in the tests above.
 
 
+# ---------------------------------------------------------------------------
+# _watch_with_restarts helper (I1 refactor)
+# ---------------------------------------------------------------------------
+
+
+class TestWatchWithRestarts:
+    """Unit tests for the extracted _watch_with_restarts helper."""
+
+    def test_restarts_observer_up_to_max(self) -> None:
+        """Observer is restarted up to _MAX_OBSERVER_RESTARTS times then gives up."""
+        from fscrawler.cli import _MAX_OBSERVER_RESTARTS, _watch_with_restarts
+
+        mock_observer = MagicMock()
+        mock_observer.is_alive.return_value = False
+        handler = MagicMock()
+
+        with (
+            patch("fscrawler.cli.Observer", return_value=mock_observer),
+            patch("fscrawler.cli.time"),
+        ):
+            _watch_with_restarts(handler, "/data", mock_observer)
+
+        # The initial observer was already started by the caller, so _watch_with_restarts
+        # only restarts. Total start calls = _MAX_OBSERVER_RESTARTS (from restarts only).
+        assert mock_observer.start.call_count == _MAX_OBSERVER_RESTARTS
+        mock_observer.stop.assert_called()
+        mock_observer.join.assert_called()
+
+    def test_stop_event_set_in_finally(self) -> None:
+        """When stop_event is provided, it must be set in the finally block."""
+        from fscrawler.cli import _watch_with_restarts
+
+        mock_observer = MagicMock()
+        mock_observer.is_alive.return_value = False
+        stop_event = threading.Event()
+
+        with (
+            patch("fscrawler.cli.Observer", return_value=mock_observer),
+            patch("fscrawler.cli.time"),
+        ):
+            _watch_with_restarts(handler=MagicMock(), path="/data",
+                                 observer=mock_observer, stop_event=stop_event)
+
+        assert stop_event.is_set()
+
+    def test_no_stop_event_no_error(self) -> None:
+        """When stop_event is None, the finally block must not raise."""
+        from fscrawler.cli import _watch_with_restarts
+
+        mock_observer = MagicMock()
+        mock_observer.is_alive.return_value = False
+
+        with (
+            patch("fscrawler.cli.Observer", return_value=mock_observer),
+            patch("fscrawler.cli.time"),
+        ):
+            _watch_with_restarts(handler=MagicMock(), path="/data",
+                                 observer=mock_observer, stop_event=None)
+
+        mock_observer.stop.assert_called()
+
+
 class TestUnhandledException:
     def test_unhandled_error_exits_with_code_1(self, tmp_path: Path) -> None:
         _write_settings(tmp_path)
