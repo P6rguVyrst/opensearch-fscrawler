@@ -44,7 +44,13 @@ class WriteAheadLog:
             wal_records.add(1, {"fscrawler.wal.action": "append", "fscrawler.job.name": self._job_name})
 
     def read(self) -> list[dict[str, Any]]:
-        """Read all valid records from the WAL. Skips corrupt lines."""
+        """Read all valid records from the WAL. Skips corrupt lines.
+
+        This method does not acquire ``self._lock``. It is safe in current
+        usage because reads happen during startup recovery before append/checkpoint
+        activity begins. Do not call it concurrently with ``append()`` or
+        ``checkpoint()`` without adding external synchronization.
+        """
         if not self._path.exists():
             return []
 
