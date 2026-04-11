@@ -22,26 +22,6 @@ items to DLQ before clearing the buffer.
 
 **File:** `src/fscrawler/indexer.py` — `_flush_locked()` except branch
 
-### Clarify _pending scope with a comment
-
-`succeeded_ids = set(self._pending.keys())` intentionally excludes folder and history
-operations (they don't go through WAL and shouldn't count in `documents_processed`).
-Add a brief comment so future maintainers understand this is deliberate.
-
-**File:** `src/fscrawler/indexer.py` — `_flush_locked()` line ~246
-
-### Test logging noise: `ValueError: I/O operation on closed file`
-
-The test suite passes, but pytest output still includes repeated logging errors
-where handlers try to write to a stream that pytest has already closed. Based on
-the `20260411` handoff, this likely involves a mix of background-thread logging
-and logger/handler lifecycle issues during teardown.
-
-Track this as test/logging hygiene work. Do not let the passing suite hide the
-noise indefinitely.
-
-**Files:** `src/fscrawler/cli.py`, logging setup, relevant test fixtures
-
 ### Sequence DLQ config policy after runtime outage semantics
 
 The `20260411` handoff concluded that DLQ config policy should not be revisited
@@ -258,15 +238,7 @@ Load the query once at module level and `copy.deepcopy()` from the cached versio
 The `_do_setup` YAML template does not include a `dlq:` section, so users won't discover
 DLQ configuration options through `fscrawler --setup`.
 
-**File:** `src/fscrawler/cli.py` — `_do_setup()`
-
 ### Document WAL.read() thread-safety precondition
-
-`read()` does not acquire `self._lock`. It is safe in current usage (only called at startup
-when no other threads are active) but would be unsafe if called concurrently with `append()`.
-Add a note to the docstring.
-
-**File:** `src/fscrawler/wal.py` — `read()`
 
 ### Note advisory nature of histogram bucket boundaries
 
