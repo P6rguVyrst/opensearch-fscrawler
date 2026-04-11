@@ -261,6 +261,7 @@ class BulkIndexer:
         except Exception as exc:
             elapsed = time.monotonic() - t0
             logger.error("Bulk flush failed: %s", exc)
+            self._route_bulk_exception(exc)
             bulk_duration.record(elapsed, {
                 "status": "error",
                 "error.type": "bulk_flush_error",
@@ -272,6 +273,21 @@ class BulkIndexer:
             self._buffer = []
             self._buffer_bytes = 0
             self._pending = {}
+
+    def _route_bulk_exception(self, exc: Exception) -> None:
+        """Route all pending document operations when bulk() fails outright."""
+        error = {
+            "type": "bulk_flush_error",
+            "reason": str(exc),
+        }
+
+        for doc_id in list(self._pending):
+            documents_processed.add(1, {
+                "status": "error",
+                "error.type": error["type"],
+                "fscrawler.job.name": self._settings.name,
+            })
+            self._route_failure(doc_id, error)
 
     def _route_failure(self, doc_id: str, error: dict[str, Any]) -> None:
         """Route a failed bulk item to DLQ (retryable) or PFQ (non-retryable)."""

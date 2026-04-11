@@ -462,6 +462,30 @@ class TestBulkErrorHandling:
         # Buffer should be cleared after failed flush
         assert len(indexer._buffer) == 0
 
+    def test_bulk_exception_routes_pending_documents_to_dlq(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        """Bulk-level exceptions should route pending document ops to the DLQ."""
+        from fscrawler.client import FsCrawlerClient
+        from fscrawler.dlq import DLQ_INDEX
+        from fscrawler.indexer import BulkIndexer
+
+        mock_opensearch_client.bulk.side_effect = ConnectionError("cluster down")
+
+        settings = make_settings(elasticsearch={"bulk_size": 100})
+        client = FsCrawlerClient(settings)
+        indexer = BulkIndexer(client, settings)
+
+        indexer.add(make_document("/data/one.txt"))
+        indexer.add(make_document("/data/two.txt"))
+        indexer.flush()
+
+        assert mock_opensearch_client.index.call_count == 2
+        for call in mock_opensearch_client.index.call_args_list:
+            assert call.kwargs["index"] == DLQ_INDEX
+            assert call.kwargs["body"]["error_type"] == "bulk_flush_error"
+            assert call.kwargs["body"]["action"] == "index"
+
 
 # ---------------------------------------------------------------------------
 # WAL + DLQ integration
