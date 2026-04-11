@@ -1,0 +1,33 @@
+name: Build and Scan Docker Image
+description: Build the amd64 Docker image locally and scan it with Trivy before release.
+
+inputs:
+  context:
+    description: Docker build context
+    required: false
+    default: .
+  image-ref:
+    description: Local image tag used for the Trivy scan
+    required: false
+    default: scan-target:latest
+
+runs:
+  using: composite
+  steps:
+    - name: Build image for scanning (amd64)
+      uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294  # v5
+      with:
+        context: ${{ inputs.context }}
+        platforms: linux/amd64
+        load: true
+        tags: ${{ inputs.image-ref }}
+        cache-from: type=gha
+
+    - name: Scan image with Trivy
+      uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # 0.35.0
+      with:
+        image-ref: ${{ inputs.image-ref }}
+        format: table
+        exit-code: 1
+        severity: CRITICAL,HIGH
+        ignore-unfixed: true

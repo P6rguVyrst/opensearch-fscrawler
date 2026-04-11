@@ -22,6 +22,19 @@ items to DLQ before clearing the buffer.
 
 **File:** `src/fscrawler/indexer.py` — `_flush_locked()` except branch
 
+### Harden failure semantics when fallback DLQ/PFQ writes fail
+
+The backup path can fail too. After a primary bulk flush failure, `_route_failure()`
+currently tries to write each pending document to DLQ or PFQ with `index_raw()`, but if
+that fallback write fails the in-memory pending record is still cleared. Design the next
+step assuming both the primary path and the backup path can fail.
+
+Current state:
+- with WAL enabled, records remain recoverable on restart
+- without WAL, pending in-memory records can still be lost
+
+**File:** `src/fscrawler/indexer.py` — `_flush_locked()` / `_route_failure()`
+
 ### Sequence DLQ config policy after runtime outage semantics
 
 DLQ config policy should not be revisited until runtime outage semantics are correct.
