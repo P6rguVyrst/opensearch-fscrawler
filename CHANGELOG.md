@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **Bulk-level flush exceptions now route pending documents to DLQ:** when `client.bulk()` fails outright, pending document operations are no longer silently dropped before the buffer is cleared.
+
+### Changed
+- **CI now validates the Docker release path before tags:** pull requests and `main` pushes build the Docker image and run the same Trivy scan used by the release workflow, so Docker release failures are caught before `publish-docker`.
+
 ## [0.5.3] - 2026-04-11
 
 ### Fixed
