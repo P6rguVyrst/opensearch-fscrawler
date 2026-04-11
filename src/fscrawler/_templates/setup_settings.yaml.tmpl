@@ -19,6 +19,12 @@ elasticsearch:
 
   byte_size: "10mb"
   push_templates: true
+  dlq:
+    max_retries: 5
+    retry_interval: 60
+    backoff_multiplier: 2.0
+    max_backoff: 3600
+    check_interval: 300
 rest:
   url: "http://127.0.0.1:8080"
   enable_cors: false

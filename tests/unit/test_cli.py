@@ -82,6 +82,12 @@ class TestSetupMode:
             "\n"
             '  byte_size: "10mb"\n'
             "  push_templates: true\n"
+            "  dlq:\n"
+            "    max_retries: 5\n"
+            "    retry_interval: 60\n"
+            "    backoff_multiplier: 2.0\n"
+            "    max_backoff: 3600\n"
+            "    check_interval: 300\n"
             "rest:\n"
             '  url: "http://127.0.0.1:8080"\n'
             "  enable_cors: false\n"
