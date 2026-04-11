@@ -243,6 +243,9 @@ class BulkIndexer:
                             "fscrawler.job.name": job_name,
                         })
             else:
+                # _pending tracks only document index/delete operations.
+                # Folder/history writes are intentionally excluded because they
+                # do not participate in WAL checkpointing or document metrics.
                 succeeded_ids = set(self._pending.keys())
                 n_ops = len(succeeded_ids)
                 for _ in range(n_ops):

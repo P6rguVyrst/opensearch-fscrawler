@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections.abc import Generator
 from pathlib import Path
@@ -18,6 +19,16 @@ from fscrawler.models import Document, FileInfo, Meta, PathInfo
 # ---------------------------------------------------------------------------
 
 DATA_DIR = Path(__file__).parent / "data"
+
+
+def _reset_root_logger() -> None:
+    """Close and remove root handlers so tests do not leak capture streams."""
+    root = logging.getLogger()
+    for handler in root.handlers[:]:
+        handler.close()
+        root.removeHandler(handler)
+    root.setLevel(logging.NOTSET)
+    logging.captureWarnings(False)
 
 
 def load_fixture(name: str) -> dict[str, Any]:
@@ -241,6 +252,12 @@ def pytest_configure(config: Any) -> None:
         "markers",
         "integration: mark test as requiring a running OpenSearch instance",
     )
+
+
+@pytest.fixture(autouse=True)
+def reset_logging_state() -> Generator[None, None, None]:
+    yield
+    _reset_root_logger()
 
 
 def pytest_collection_modifyitems(items: list[Any]) -> None:

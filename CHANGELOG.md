@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-04-11
+
+### Fixed
+- **Dedicated DLQ/PFQ cluster bootstrap now installs required templates before index creation:** startup pushes the DLQ/PFQ template dependency set before ensuring the `fscrawler_dlq` and `fscrawler_pfq` indices, so a dedicated DLQ cluster no longer relies on missing `composed_of` dependencies.
+- **Pytest logging noise no longer emits closed-stream errors:** test teardown now resets root logging handlers between tests, eliminating repeated `ValueError: I/O operation on closed file` noise from the suite.
+
+### Changed
+- **`--setup` template moved out of `cli.py`:** starter `_settings.yaml` content is now loaded from a dedicated template file instead of an inline YAML blob in the CLI implementation. Behavior is unchanged.
+- **`--setup` now exposes DLQ defaults:** generated starter configs include the existing `dlq` retry/backoff settings so users can discover and tune them without reading the source.
+- **Ignore WAL runtime files under shipped config directories:** git now ignores `config/**/.wal` and `config/**/.wal_tmp_*` so runtime state does not appear as repo noise during local runs.
+- **Documented internal WAL/indexer invariants:** `_pending` scope and `WAL.read()` startup-only thread-safety assumptions are now called out inline for maintainers.
+
 ## [0.5.1] - 2026-04-04
 
 Audit of all upstream issue references in the codebase. Each fix was verified

@@ -62,6 +62,8 @@ bulk_duration: Histogram = _meter.create_histogram(
     name="fscrawler.bulk.duration",
     description="Duration of bulk flush operations",
     unit="s",
+    # This OTel API field is advisory. The default SDK honors it, but a custom
+    # View can still override the actual histogram bucket boundaries.
     explicit_bucket_boundaries_advisory=BULK_DURATION_BOUNDARIES,
 )
 

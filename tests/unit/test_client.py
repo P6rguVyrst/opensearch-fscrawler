@@ -93,7 +93,7 @@ class TestGetInfo:
 # ---------------------------------------------------------------------------
 
 
-class TestPushTemplates:
+class TestPushTemplatesBehavior:
     def test_creates_component_templates_when_missing(
         self, mock_opensearch_client: MagicMock
     ) -> None:
@@ -104,6 +104,34 @@ class TestPushTemplates:
         # Template does not exist → side_effect raises
         client.push_templates()
         assert mock_opensearch_client.cluster.put_component_template.called
+
+    def test_push_dlq_templates_only_pushes_dlq_dependencies(
+        self, mock_opensearch_client: MagicMock
+    ) -> None:
+        from fscrawler.client import FsCrawlerClient
+
+        settings = make_settings()
+        client = FsCrawlerClient(settings)
+
+        client.push_dlq_templates()
+
+        component_names = [
+            call.kwargs.get("name") or call.args[0]
+            for call in mock_opensearch_client.cluster.put_component_template.call_args_list
+        ]
+        index_names = [
+            call.kwargs.get("name") or call.args[0]
+            for call in mock_opensearch_client.indices.put_index_template.call_args_list
+        ]
+        assert component_names == [
+            "fscrawler_settings_total_fields",
+            "fscrawler_mapping_dlq",
+            "fscrawler_mapping_pfq",
+        ]
+        assert index_names == [
+            "fscrawler_index_template_dlq",
+            "fscrawler_index_template_pfq",
+        ]
 
     def test_skips_existing_component_template(self, mock_opensearch_client: MagicMock) -> None:
         from fscrawler.client import FsCrawlerClient
@@ -356,7 +384,7 @@ class TestIndexManagement:
 # ---------------------------------------------------------------------------
 
 
-class TestPushTemplates:
+class TestPushTemplatesCoverage:
     def test_push_templates_creates_all_component_and_index_templates(
         self, mock_opensearch_client: MagicMock
     ) -> None:

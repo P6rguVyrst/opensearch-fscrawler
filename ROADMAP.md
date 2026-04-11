@@ -1,8 +1,8 @@
 # Roadmap
 
-Items identified during v0.4.0 release review. Tracked here for follow-up.
+Open work only. Shipped work belongs in `CHANGELOG.md`.
 
-## v0.4.1 — Important
+## Near-Term Fixes
 
 ### Release DLQ/PFQ writes from the indexer lock
 
@@ -22,39 +22,30 @@ items to DLQ before clearing the buffer.
 
 **File:** `src/fscrawler/indexer.py` — `_flush_locked()` except branch
 
-### Clarify _pending scope with a comment
+### Sequence DLQ config policy after runtime outage semantics
 
-`succeeded_ids = set(self._pending.keys())` intentionally excludes folder and history
-operations (they don't go through WAL and shouldn't count in `documents_processed`).
-Add a brief comment so future maintainers understand this is deliberate.
+DLQ config policy should not be revisited until runtime outage semantics are correct.
+Fail-closed or breaking config changes should not ship ahead of fixing the actual
+primary-cluster bulk-failure path in `_flush_locked()`.
 
-**File:** `src/fscrawler/indexer.py` — `_flush_locked()` line ~246
+### Boolean parsing trap in future DLQ config-policy work
 
-## v0.5.0 — Crawling Hardening (shipped)
+The abandoned fail-closed config path on `moar-hardening` parsed
+`allow_shared_cluster` with `bool(...)`, which would treat strings like
+`"false"` as truthy in direct `from_dict()` usage. If DLQ config-policy work
+resumes, use explicit boolean parsing instead of Python truthiness.
 
-All items below were completed in v0.5.0 and audited in v0.5.1. Kept here
-for traceability — see CHANGELOG.md for details.
+**File:** future follow-up in `src/fscrawler/settings.py`
 
-- [x] Full virtual path matching for include/exclude patterns
-- [x] Large file streaming (64 KB threshold) — [#566](https://github.com/dadoonet/fscrawler/issues/566), [#890](https://github.com/dadoonet/fscrawler/issues/890)
-- [x] Clock skew tolerance for mtime comparison
-- [x] Symlink cycle detection via `(dev, inode)` tracking
-- [x] Unicode NFC normalization for filenames
-- [x] `.fscrawlerignore` sentinel file
-- [x] Default excludes (`~*`)
-- [x] Special file type detection (pipes, sockets, devices)
-- [x] `on_moved` handler — [#1300](https://github.com/dadoonet/fscrawler/issues/1300)
-- [x] `ignore_above` metadata-only indexing — [#1605](https://github.com/dadoonet/fscrawler/issues/1605)
-- [x] Observer health-check and restart — inspired by [#1093](https://github.com/dadoonet/fscrawler/issues/1093) (monitors Observer thread, not crawl thread)
-- [x] File permissions as octal strings, owner/group as names — [#956](https://github.com/dadoonet/fscrawler/issues/956), [#955](https://github.com/dadoonet/fscrawler/issues/955)
-- [x] REST max body size — inspired by [#1709](https://github.com/dadoonet/fscrawler/issues/1709) (Python-side safeguard, not Jackson fix)
-- [x] Large file integer overflow prevention (`long` field types) — [#890](https://github.com/dadoonet/fscrawler/issues/890)
-- [x] Mapping type validation and `file.filename` store=true — [#904](https://github.com/dadoonet/fscrawler/issues/904)
-- [x] Content whitespace normalization (`fs.content_normalize`) — [#802](https://github.com/dadoonet/fscrawler/issues/802)
+### CI / supply-chain hardening as a separate salvage track
 
-### Still open from v0.5.0 scope
+Keep CI and supply-chain improvements on a separate track from DLQ runtime work.
+If that work is resumed, it should land as a dedicated hardening branch rather
+than being mixed into DLQ runtime or release-policy changes.
 
-#### Content filters (regex on extracted text)
+## Next Minor Candidates
+
+### Content filters (regex on extracted text)
 
 Java supports `fs.filters` — a list of regex patterns applied to extracted
 text. Documents whose content does not match any pattern are skipped (not
@@ -62,7 +53,7 @@ indexed). Useful for filtering noise.
 
 **File:** `src/fscrawler/parser.py` or new filter step in `cli.py`
 
-#### Checkpoint does not scale to 1M+ files
+### Checkpoint does not scale to 1M+ files
 
 The checkpoint dict holds all file paths + mtimes in memory and serializes as
 a single JSON blob. For million-file directories this causes OOM or
@@ -71,7 +62,7 @@ multi-second serialization pauses.
 **Upstream:** [dadoonet/fscrawler#1429](https://github.com/dadoonet/fscrawler/issues/1429)
 **File:** `src/fscrawler/crawler.py` — checkpoint storage
 
-#### Alpine container silent Tika failures
+### Alpine container silent Tika failures
 
 Minimal Alpine-based Docker images may lack font/library dependencies that
 Tika needs for certain document types. Extraction fails silently (empty
@@ -81,68 +72,34 @@ Docker image.
 **Upstream:** [dadoonet/fscrawler#942](https://github.com/dadoonet/fscrawler/issues/942)
 **File:** `Dockerfile`, integration tests
 
-#### Crawl thread liveness monitoring
+### Crawl thread liveness monitoring
 
-The observer health-check (v0.5.0) monitors the watchdog thread, but a hung
-Tika call or stalled indexing pipeline would not be detected. Add a heartbeat
-or timeout on individual file processing to detect stuck crawl threads.
+The observer health-check monitors the watchdog thread, but a hung Tika call or
+stalled indexing pipeline would not be detected. Add a heartbeat or timeout on
+individual file processing to detect stuck crawl threads.
 
-**Upstream:** [dadoonet/fscrawler#1093](https://github.com/dadoonet/fscrawler/issues/1093) (the actual failure mode described in the issue)
+**Upstream:** [dadoonet/fscrawler#1093](https://github.com/dadoonet/fscrawler/issues/1093)
 
-## v0.6.0 — Remote Filesystem Crawling (SFTP)
+### Remote Filesystem Crawling (SFTP)
 
-SFTP support via a filesystem abstraction layer. Replaces the Java upstream's
-SSH + plain FTP with SFTP-only (encrypted transport, no cleartext credentials).
-Plain FTP is intentionally excluded as insecure.
+SFTP support via a filesystem abstraction layer. Plain FTP remains excluded as
+insecure.
 
-Design and implementation plan to be written separately. Key decisions:
+Key constraints:
 
-- **Protocol:** SFTP only (not raw SSH exec, not plain FTP, not FTPS)
-- **Auth:** password + key-based (PEM). Host key verification **enabled** by
-  default (Java disables it — we improve on this)
-- **Config compatibility:** reuse `server:` block from upstream configs
-  (`hostname`, `port`, `username`, `password`, `pem_path`). Add
-  `protocol: sftp` (accept `ssh` as alias for backwards compat)
-- **Abstraction:** filesystem provider interface so future protocols (S3,
-  WebDAV) can be added without modifying core crawler logic
-- **Streaming:** remote files streamed through temp files, not loaded into
-  memory (aligns with v0.5.0 large-file fix)
-- **Metadata:** best-effort — SFTP provides mtime, size, uid/gid, permissions.
-  No creation date, no ACLs.
-- **Error handling:** connection retry with exponential backoff, consistent
-  with existing OpenSearch client retry pattern
+- protocol: SFTP only
+- auth: password and PEM key support
+- host key verification enabled by default
+- reuse upstream-style `server:` config where practical
+- stream remote files through temp files instead of loading into memory
+- keep metadata best-effort and transport-specific
 
-## Future — Tika Integration Improvements
-
-Not prioritized for immediate work. Documenting for roadmap visibility.
-
-### Embedded content extraction (no separate Tika server)
-
-The current architecture requires a separate Apache Tika HTTP server. Java
-bundles Tika as a JVM library — no external dependency. Embedding a JVM is
-not viable for the Python rewrite.
-
-**Possible approaches (not yet evaluated):**
-- Python-native extraction libraries (python-magic + textract, or similar)
-  for common formats, with Tika HTTP as fallback for exotic types
-- Tika sidecar container auto-management (launch Tika container automatically
-  if not already running)
-- Improved documentation and docker-compose defaults to reduce friction
-
-**Decision:** deferred. The Tika HTTP architecture is adequate for containerized
-deployments. Revisit if user demand warrants.
-
-## Backlog — Features (from upstream issue audit)
-
-Items sourced from open issues in
-[dadoonet/fscrawler](https://github.com/dadoonet/fscrawler/issues). Linked
-for traceability and upstream community visibility.
+## Longer-Term Backlog
 
 ### Parallel crawling / worker concurrency
 
 Tika extraction is the bottleneck for large crawl jobs. Support configurable
-worker concurrency (thread pool or async workers) for the parse → index
-pipeline.
+worker concurrency for the parse → index pipeline.
 
 **Upstream:** [dadoonet/fscrawler#627](https://github.com/dadoonet/fscrawler/issues/627)
 
@@ -164,14 +121,14 @@ directories from crawling.
 ### Add server hostname to indexed documents
 
 Include the crawler's hostname in indexed documents for multi-server
-deployments. Trivial metadata addition (`file.hostname` field).
+deployments.
 
 **Upstream:** [dadoonet/fscrawler#1000](https://github.com/dadoonet/fscrawler/issues/1000)
 
 ### Log full filesystem path of failed files in DLQ
 
-DLQ records should include the original filesystem path (not just the virtual
-path and document ID) so operators can locate and inspect failed files.
+DLQ records should include the original filesystem path so operators can
+locate and inspect failed files.
 
 **Upstream:** [dadoonet/fscrawler#1253](https://github.com/dadoonet/fscrawler/issues/1253)
 
@@ -185,55 +142,32 @@ patterns.
 
 ### REST API authentication
 
-Already flagged as CRITICAL in `SECURITY.md` (REST-1). Add configurable
-authentication to the REST API before any production deployment.
+Add configurable authentication to the REST API before any production
+deployment.
 
 **Upstream:** [dadoonet/fscrawler#2306](https://github.com/dadoonet/fscrawler/issues/2306)
 
 ### Upsert instead of overwrite on re-crawl
 
-Crawler currently overwrites documents, destroying user-added metadata (custom
-tags, annotations). Add `fs.upsert: true` option to merge crawler fields into
-existing documents without overwriting user-enriched fields.
+Crawler currently overwrites documents, destroying user-added metadata. Add an
+option to merge crawler fields into existing documents without overwriting
+user-enriched fields.
 
 **Upstream:** [dadoonet/fscrawler#1867](https://github.com/dadoonet/fscrawler/issues/1867)
 
 ### Per-path/per-pattern tagging
 
 Support custom metadata tags in config that apply to files matching specific
-paths or patterns (e.g. tag all files under `/legal/` with
-`department: legal`).
+paths or patterns.
 
 **Upstream:** [dadoonet/fscrawler#884](https://github.com/dadoonet/fscrawler/issues/884)
 
-## Backlog — Suggestions
+## Deferred Ideas
 
-### Cache DLQ query file at module level
+### Tika integration improvements
 
-`run_retry_cycle()` reads and parses `dlq_due_records.json` from disk on every invocation.
-Load the query once at module level and `copy.deepcopy()` from the cached version.
+The current architecture depends on a separate Apache Tika HTTP server.
+Possible future directions include Python-native extraction for common formats,
+automatic Tika sidecar management, or better operational defaults and docs.
 
-**File:** `src/fscrawler/dlq.py`
-
-### Add dlq section to --setup template
-
-The `_do_setup` YAML template does not include a `dlq:` section, so users won't discover
-DLQ configuration options through `fscrawler --setup`.
-
-**File:** `src/fscrawler/cli.py` — `_do_setup()`
-
-### Document WAL.read() thread-safety precondition
-
-`read()` does not acquire `self._lock`. It is safe in current usage (only called at startup
-when no other threads are active) but would be unsafe if called concurrently with `append()`.
-Add a note to the docstring.
-
-**File:** `src/fscrawler/wal.py` — `read()`
-
-### Note advisory nature of histogram bucket boundaries
-
-`explicit_bucket_boundaries_advisory` is an advisory hint in the OTel API. The default SDK
-view honors it as of OTel SDK 1.20+, but a custom `View` could override it. Worth a code
-comment for future reference.
-
-**File:** `src/fscrawler/metrics.py` — `bulk_duration`
+This is not prioritized right now.

@@ -23,6 +23,11 @@ class TestTemplatesBundled:
         templates_dir = _package_dir() / "_templates"
         assert templates_dir.is_dir(), f"_templates dir missing: {templates_dir}"
 
+    def test_setup_template_present(self) -> None:
+        templates_dir = _package_dir() / "_templates"
+        path = templates_dir / "setup_settings.yaml.tmpl"
+        assert path.is_file(), f"Missing setup template: {path}"
+
     def test_all_component_templates_present(self) -> None:
         from fscrawler.templates import _TEMPLATES_DIR, SHARED_COMPONENTS
 

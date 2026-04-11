@@ -9,15 +9,15 @@ from __future__ import annotations
 import threading
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from click.testing import CliRunner
 
 from fscrawler.cli import main
 
 
-def _write_settings(tmp_path: Path, job_name: str = "test-job") -> Path:
-    """Write a minimal _settings.yaml and return its path."""
+def _write_existing_job_settings(tmp_path: Path, job_name: str = "test-job") -> Path:
+    """Write a minimal existing _settings.yaml and return its path."""
     job_dir = tmp_path / job_name
     job_dir.mkdir(parents=True, exist_ok=True)
     settings_file = job_dir / "_settings.yaml"
@@ -29,7 +29,7 @@ def _write_settings(tmp_path: Path, job_name: str = "test-job") -> Path:
     return settings_file
 
 
-def _mock_settings() -> MagicMock:
+def _make_cli_settings_mock() -> MagicMock:
     """Return a MagicMock that behaves like FsSettings."""
     settings = MagicMock()
     settings.name = "test-job"
@@ -52,8 +52,49 @@ class TestSetupMode:
         assert result.exit_code == 0
         assert (job_dir / "_settings.yaml").exists()
 
+    def test_setup_writes_expected_template_content(self, tmp_path: Path) -> None:
+        job_dir = tmp_path / "new-job"
+
+        result = CliRunner().invoke(
+            main, ["--config_dir", str(tmp_path), "--setup", "new-job"]
+        )
+
+        assert result.exit_code == 0
+        assert (job_dir / "_settings.yaml").read_text(encoding="utf-8") == (
+            'name: "new-job"\n'
+            "fs:\n"
+            '  url: "/data"\n'
+            "  includes: []\n"
+            "  excludes: []\n"
+            "  follow_symlinks: false\n"
+            "  remove_deleted: false\n"
+            "  continue_on_error: false\n"
+            "  index_content: true\n"
+            "  add_filesize: true\n"
+            "  index_folders: true\n"
+            '  checksum: "sha256"\n'
+            "  keep_history: false\n"
+            "elasticsearch:\n"
+            "  nodes:\n"
+            '    - url: "http://localhost:9200"\n'
+            "  ssl_verification: false\n"
+            "  bulk_size: 100\n"
+            "\n"
+            '  byte_size: "10mb"\n'
+            "  push_templates: true\n"
+            "  dlq:\n"
+            "    max_retries: 5\n"
+            "    retry_interval: 60\n"
+            "    backoff_multiplier: 2.0\n"
+            "    max_backoff: 3600\n"
+            "    check_interval: 300\n"
+            "rest:\n"
+            '  url: "http://127.0.0.1:8080"\n'
+            "  enable_cors: false\n"
+        )
+
     def test_setup_does_not_overwrite_existing(self, tmp_path: Path) -> None:
-        settings_file = _write_settings(tmp_path, "existing-job")
+        settings_file = _write_existing_job_settings(tmp_path, "existing-job")
         original_content = settings_file.read_text()
 
         result = CliRunner().invoke(
@@ -74,8 +115,8 @@ class TestMissingSettings:
 
 class TestRunMode:
     def test_run_calls_crawl_once(self, tmp_path: Path) -> None:
-        _write_settings(tmp_path)
-        mock_settings = _mock_settings()
+        _write_existing_job_settings(tmp_path)
+        mock_settings = _make_cli_settings_mock()
         with (
             patch("fscrawler.client.FsCrawlerClient") as mock_cls,
             patch("fscrawler.settings.FsSettings.from_file", return_value=mock_settings),
@@ -91,8 +132,8 @@ class TestRunMode:
         mock_crawl.assert_called_once()
 
     def test_loop_starts_observer(self, tmp_path: Path) -> None:
-        _write_settings(tmp_path)
-        mock_settings = _mock_settings()
+        _write_existing_job_settings(tmp_path)
+        mock_settings = _make_cli_settings_mock()
         mock_observer = MagicMock()
         mock_observer.is_alive.return_value = False
 
@@ -117,8 +158,8 @@ class TestRunMode:
 
 class TestRestMode:
     def test_rest_starts_uvicorn(self, tmp_path: Path) -> None:
-        _write_settings(tmp_path)
-        mock_settings = _mock_settings()
+        _write_existing_job_settings(tmp_path)
+        mock_settings = _make_cli_settings_mock()
         with (
             patch("fscrawler.cli.uvicorn") as mock_uvicorn,
             patch("fscrawler.client.FsCrawlerClient"),
@@ -363,6 +404,19 @@ class TestWalRecoveryMetrics:
 
 
 class TestEnsureDlqIndices:
+    def test_bootstrap_pushes_dlq_templates_before_ensuring_dlq_indices(self) -> None:
+        from fscrawler.cli import _bootstrap_dlq_indices
+
+        client = MagicMock()
+
+        _bootstrap_dlq_indices(client)
+
+        assert client.mock_calls == [
+            call.push_dlq_templates(),
+            call.ensure_index("fscrawler_dlq"),
+            call.ensure_index("fscrawler_pfq"),
+        ]
+
     def test_ensure_dlq_pfq_indices_called(self) -> None:
         from fscrawler.cli import _ensure_dlq_indices
 
@@ -377,8 +431,8 @@ class TestEnsureDlqIndices:
 class TestOtelEndpointFlag:
     def test_otel_endpoint_flag_accepted(self, tmp_path: Path) -> None:
         """The --otel-endpoint flag should be accepted without error."""
-        _write_settings(tmp_path)
-        mock_settings = _mock_settings()
+        _write_existing_job_settings(tmp_path)
+        mock_settings = _make_cli_settings_mock()
         with (
             patch("fscrawler.client.FsCrawlerClient") as mock_cls,
             patch("fscrawler.settings.FsSettings.from_file", return_value=mock_settings),
@@ -403,7 +457,7 @@ class TestOtelEndpointFlag:
 
     def test_log_otel_endpoint_flag_removed(self, tmp_path: Path) -> None:
         """The old --log-otel-endpoint flag should no longer be accepted."""
-        _write_settings(tmp_path)
+        _write_existing_job_settings(tmp_path)
         result = CliRunner().invoke(
             main,
             [
@@ -432,7 +486,7 @@ class TestObserverRestart:
         """Observer.start() should be called more than once when observer dies."""
         from fscrawler.cli import _MAX_OBSERVER_RESTARTS, _crawler_loop
 
-        settings = _mock_settings()
+        settings = _make_cli_settings_mock()
         client = MagicMock()
         crawler_state = MagicMock()
         crawler_state.paused = False
@@ -458,7 +512,7 @@ class TestObserverRestart:
         """After _MAX_OBSERVER_RESTARTS, the loop should exit."""
         from fscrawler.cli import _MAX_OBSERVER_RESTARTS, _crawler_loop
 
-        settings = _mock_settings()
+        settings = _make_cli_settings_mock()
         client = MagicMock()
         crawler_state = MagicMock()
         crawler_state.paused = False
@@ -482,7 +536,7 @@ class TestObserverRestart:
     def test_observer_no_restart_when_alive(self, tmp_path: Path) -> None:
         """If observer stays alive, no restarts should happen."""
 
-        _settings = _mock_settings()
+        _settings = _make_cli_settings_mock()
         _client = MagicMock()
         crawler_state = MagicMock()
         crawler_state.paused = False
@@ -573,8 +627,8 @@ class TestWatchWithRestarts:
 
 class TestUnhandledException:
     def test_unhandled_error_exits_with_code_1(self, tmp_path: Path) -> None:
-        _write_settings(tmp_path)
-        mock_settings = _mock_settings()
+        _write_existing_job_settings(tmp_path)
+        mock_settings = _make_cli_settings_mock()
         with (
             patch("fscrawler.client.FsCrawlerClient"),
             patch("fscrawler.settings.FsSettings.from_file", return_value=mock_settings),

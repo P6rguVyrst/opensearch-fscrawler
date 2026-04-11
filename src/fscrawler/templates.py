@@ -29,26 +29,43 @@ from typing import Any
 
 _TEMPLATES_DIR = Path(__file__).parent / "_templates"
 
-SHARED_COMPONENTS = [
-    "settings_total_fields",
-    "mapping_file",
-    "mapping_path",
-    "mapping_meta",
-    "mapping_content",
-    "mapping_attachment",
-    "mapping_attributes",
-    "mapping_history",
-    "mapping_dlq",
-    "mapping_pfq",
-]
+TEMPLATE_GROUPS = {
+    "default": {
+        "components": (
+            "settings_total_fields",
+            "mapping_file",
+            "mapping_path",
+            "mapping_meta",
+            "mapping_content",
+            "mapping_attachment",
+            "mapping_attributes",
+            "mapping_history",
+            "mapping_dlq",
+            "mapping_pfq",
+        ),
+        "indices": (
+            "index_template_docs",
+            "index_template_folders",
+            "index_template_history",
+            "index_template_dlq",
+            "index_template_pfq",
+        ),
+    },
+    "dlq": {
+        "components": (
+            "settings_total_fields",
+            "mapping_dlq",
+            "mapping_pfq",
+        ),
+        "indices": (
+            "index_template_dlq",
+            "index_template_pfq",
+        ),
+    },
+}
 
-INDEX_TEMPLATES = [
-    "index_template_docs",
-    "index_template_folders",
-    "index_template_history",
-    "index_template_dlq",
-    "index_template_pfq",
-]
+SHARED_COMPONENTS = list(TEMPLATE_GROUPS["default"]["components"])
+INDEX_TEMPLATES = list(TEMPLATE_GROUPS["default"]["indices"])
 
 
 def _load(name: str) -> dict[str, Any]:
@@ -57,11 +74,29 @@ def _load(name: str) -> dict[str, Any]:
         return json.load(f)  # type: ignore[no-any-return]
 
 
+def get_template_group(
+    group: str = "default",
+) -> tuple[list[tuple[str, dict[str, Any]]], list[tuple[str, dict[str, Any]]]]:
+    """Return the component and index templates for a named group."""
+    template_group = TEMPLATE_GROUPS[group]
+    component_templates = [
+        (f"fscrawler_{name}", _load(name))
+        for name in template_group["components"]
+    ]
+    index_templates = [
+        (f"fscrawler_{name}", _load(name))
+        for name in template_group["indices"]
+    ]
+    return component_templates, index_templates
+
+
 def get_component_templates() -> list[tuple[str, dict[str, Any]]]:
     """Return (name, body) tuples for all component templates."""
-    return [(f"fscrawler_{name}", _load(name)) for name in SHARED_COMPONENTS]
+    component_templates, _ = get_template_group()
+    return component_templates
 
 
 def get_index_templates() -> list[tuple[str, dict[str, Any]]]:
     """Return (name, body) tuples for all index templates."""
-    return [(f"fscrawler_{name}", _load(name)) for name in INDEX_TEMPLATES]
+    _, index_templates = get_template_group()
+    return index_templates

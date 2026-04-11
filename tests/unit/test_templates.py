@@ -12,6 +12,21 @@ _TEMPLATES_DIR = Path(__file__).parent.parent.parent / "src" / "fscrawler" / "_t
 
 
 class TestDLQTemplates:
+    def test_dlq_template_group_contains_required_dependencies(self) -> None:
+        from fscrawler.templates import get_template_group
+
+        component_templates, index_templates = get_template_group("dlq")
+
+        assert [name for name, _ in component_templates] == [
+            "fscrawler_settings_total_fields",
+            "fscrawler_mapping_dlq",
+            "fscrawler_mapping_pfq",
+        ]
+        assert [name for name, _ in index_templates] == [
+            "fscrawler_index_template_dlq",
+            "fscrawler_index_template_pfq",
+        ]
+
     def test_dlq_component_template_loaded(self) -> None:
         from fscrawler.templates import get_component_templates
 
