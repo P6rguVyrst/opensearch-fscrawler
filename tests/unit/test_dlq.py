@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 
@@ -160,6 +162,30 @@ def _make_dlq_hit(
 
 
 class TestRunRetryCycle:
+    def test_retry_query_loaded_once_at_module_import(self) -> None:
+        from fscrawler import dlq
+
+        client = MagicMock()
+        client.search.return_value = {"hits": {"hits": []}}
+        config = _make_config()
+
+        query_file = dlq._QUERIES_DIR / "dlq_due_records.json"
+        real_open = open
+        open_calls = 0
+
+        def counting_open(path: str | Path, *args, **kwargs):
+            nonlocal open_calls
+            if Path(path) == query_file:
+                open_calls += 1
+            return real_open(path, *args, **kwargs)
+
+        with patch("builtins.open", side_effect=counting_open):
+            importlib.reload(dlq)
+            dlq.run_retry_cycle(client, config)
+            dlq.run_retry_cycle(client, config)
+
+        assert open_calls == 1
+
     def test_no_due_records_is_noop(self) -> None:
         from fscrawler.dlq import run_retry_cycle
 

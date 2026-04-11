@@ -16,6 +16,9 @@ logger = logging.getLogger("fscrawler.dlq")
 
 _QUERIES_DIR = Path(__file__).parent / "_queries"
 
+with open(_QUERIES_DIR / "dlq_due_records.json") as f:
+    _DLQ_DUE_RECORDS_QUERY = json.load(f)
+
 DLQ_INDEX = "fscrawler_dlq"
 PFQ_INDEX = "fscrawler_pfq"
 
@@ -99,10 +102,7 @@ def run_retry_cycle(
     job_name: str | None = None,
 ) -> None:
     """Query DLQ for due records and retry each one."""
-    with open(_QUERIES_DIR / "dlq_due_records.json") as f:
-        query = json.load(f)
-
-    query = copy.deepcopy(query)
+    query = copy.deepcopy(_DLQ_DUE_RECORDS_QUERY)
 
     if job_name is not None:
         query["query"]["bool"]["filter"].append(
