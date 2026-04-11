@@ -13,7 +13,7 @@ from opensearchpy import OpenSearch
 from opensearchpy.exceptions import ConnectionError as OSConnectionError
 
 from fscrawler.settings import FsSettings
-from fscrawler.templates import get_component_templates, get_index_templates
+from fscrawler.templates import get_template_group
 
 logger = logging.getLogger("fscrawler.client")
 
@@ -128,14 +128,24 @@ class FsCrawlerClient:
 
     def push_templates(self, force: bool = False) -> None:
         """Create component and index templates if push_templates is enabled."""
+        self._push_template_group(force=force)
+
+    def push_dlq_templates(self, force: bool = False) -> None:
+        """Create only the DLQ/PFQ template dependency set."""
+        self._push_template_group(group="dlq", force=force)
+
+    def _push_template_group(self, group: str = "default", force: bool = False) -> None:
+        """Create component and index templates for a named template group."""
         if not self._settings.elasticsearch.push_templates:
             logger.debug("push_templates is disabled — skipping.")
             return
 
-        for name, body in get_component_templates():
+        component_templates, index_templates = get_template_group(group)
+
+        for name, body in component_templates:
             self._put_component_template(name, body, force=force)
 
-        for name, body in get_index_templates():
+        for name, body in index_templates:
             self._put_index_template(name, body, force=force)
 
     def _template_exists(self, name: str, kind: str) -> bool:

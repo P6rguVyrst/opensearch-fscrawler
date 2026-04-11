@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-04-11
+
+### Fixed
+- **Dedicated DLQ/PFQ cluster bootstrap now installs required templates before index creation:** startup pushes the DLQ/PFQ template dependency set before ensuring the `fscrawler_dlq` and `fscrawler_pfq` indices, so a dedicated DLQ cluster no longer relies on missing `composed_of` dependencies.
+
+### Changed
+- **`--setup` template moved out of `cli.py`:** starter `_settings.yaml` content is now loaded from a dedicated template file instead of an inline YAML blob in the CLI implementation. Behavior is unchanged.
+- **Ignore WAL runtime files under shipped config directories:** git now ignores `config/**/.wal` and `config/**/.wal_tmp_*` so runtime state does not appear as repo noise during local runs.
+
 ## [0.5.1] - 2026-04-04
 
 Audit of all upstream issue references in the codebase. Each fix was verified

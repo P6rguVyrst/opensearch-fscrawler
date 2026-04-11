@@ -1,0 +1,24 @@
+name: "__JOB_NAME__"
+fs:
+  url: "/data"
+  includes: []
+  excludes: []
+  follow_symlinks: false
+  remove_deleted: false
+  continue_on_error: false
+  index_content: true
+  add_filesize: true
+  index_folders: true
+  checksum: "sha256"
+  keep_history: false
+elasticsearch:
+  nodes:
+    - url: "http://localhost:9200"
+  ssl_verification: false
+  bulk_size: 100
+
+  byte_size: "10mb"
+  push_templates: true
+rest:
+  url: "http://127.0.0.1:8080"
+  enable_cors: false

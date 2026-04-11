@@ -32,6 +32,7 @@ from fscrawler.watcher import FsEventHandler
 logger = logging.getLogger("fscrawler.cli")
 
 _MAX_OBSERVER_RESTARTS = 5
+_SETUP_TEMPLATE_PATH = Path(__file__).parent / "_templates" / "setup_settings.yaml.tmpl"
 
 
 # I1: Shared observer health-check + restart loop used by both
@@ -207,6 +208,12 @@ def _ensure_dlq_indices(client: FsCrawlerClient) -> None:
     client.ensure_index(PFQ_INDEX)
 
 
+def _bootstrap_dlq_indices(client: FsCrawlerClient) -> None:
+    """Push DLQ/PFQ templates and ensure the DLQ indices exist."""
+    client.push_dlq_templates()
+    _ensure_dlq_indices(client)
+
+
 def _recover_wal(client: FsCrawlerClient, wal: WriteAheadLog) -> None:
     """Replay un-checkpointed WAL records on startup."""
     if wal.is_empty:
@@ -300,7 +307,7 @@ def _run_rest(settings_file: Path, job_dir: Path, *, otel_endpoint: str | None =
     if settings.fs.keep_history:
         client.ensure_index(settings.elasticsearch.index_history)
 
-    _ensure_dlq_indices(client)
+    _bootstrap_dlq_indices(client)
 
     wal = WriteAheadLog(job_dir / ".wal", job_name=settings.name)
     _recover_wal(client, wal)
@@ -438,7 +445,7 @@ def _run(job_name: str, settings_file: Path, job_dir: Path, loop: bool) -> None:
     if settings.fs.keep_history:
         client.ensure_index(settings.elasticsearch.index_history)
 
-    _ensure_dlq_indices(client)
+    _bootstrap_dlq_indices(client)
 
     wal = WriteAheadLog(job_dir / ".wal", job_name=settings.name)
     _recover_wal(client, wal)
@@ -472,32 +479,9 @@ def _do_setup(job_dir: Path, settings_file: Path) -> None:
         click.echo(f"Settings file already exists: {settings_file}")
         return
 
-    template = f"""\
-name: "{job_dir.name}"
-fs:
-  url: "/data"
-  includes: []
-  excludes: []
-  follow_symlinks: false
-  remove_deleted: false
-  continue_on_error: false
-  index_content: true
-  add_filesize: true
-  index_folders: true
-  checksum: "sha256"
-  keep_history: false
-elasticsearch:
-  nodes:
-    - url: "http://localhost:9200"
-  ssl_verification: false
-  bulk_size: 100
-
-  byte_size: "10mb"
-  push_templates: true
-rest:
-  url: "http://127.0.0.1:8080"
-  enable_cors: false
-"""
+    template = _SETUP_TEMPLATE_PATH.read_text(encoding="utf-8").replace(
+        "__JOB_NAME__", job_dir.name
+    )
     settings_file.write_text(template, encoding="utf-8")
     click.echo(f"Created settings file: {settings_file}")
     click.echo("Edit it and then run fscrawler without --setup.")

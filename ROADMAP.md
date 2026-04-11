@@ -30,6 +30,44 @@ Add a brief comment so future maintainers understand this is deliberate.
 
 **File:** `src/fscrawler/indexer.py` — `_flush_locked()` line ~246
 
+### Test logging noise: `ValueError: I/O operation on closed file`
+
+The test suite passes, but pytest output still includes repeated logging errors
+where handlers try to write to a stream that pytest has already closed. Based on
+the `20260411` handoff, this likely involves a mix of background-thread logging
+and logger/handler lifecycle issues during teardown.
+
+Track this as test/logging hygiene work. Do not let the passing suite hide the
+noise indefinitely.
+
+**Files:** `src/fscrawler/cli.py`, logging setup, relevant test fixtures
+
+### Sequence DLQ config policy after runtime outage semantics
+
+The `20260411` handoff concluded that DLQ config policy should not be revisited
+until runtime outage semantics are correct. In particular, fail-closed or
+breaking config changes should not ship ahead of fixing the actual primary-cluster
+bulk-failure path in `_flush_locked()`.
+
+Treat this as a sequencing constraint on future DLQ work, not as a release item
+for `v0.5.3`.
+
+### Boolean parsing trap in future DLQ config-policy work
+
+The abandoned fail-closed config path on `moar-hardening` parsed
+`allow_shared_cluster` with `bool(...)`, which would treat strings like
+`"false"` as truthy in direct `from_dict()` usage. If DLQ config-policy work
+resumes, use explicit boolean parsing instead of Python truthiness.
+
+**File:** future follow-up in `src/fscrawler/settings.py`
+
+### CI / supply-chain hardening as a separate salvage track
+
+The `20260411` handoff recommended keeping CI and supply-chain improvements on
+a separate track from DLQ runtime work. If that work is resumed, it should land
+as a dedicated hardening branch rather than being mixed into DLQ runtime or
+release-policy changes.
+
 ## v0.5.0 — Crawling Hardening (shipped)
 
 All items below were completed in v0.5.0 and audited in v0.5.1. Kept here
